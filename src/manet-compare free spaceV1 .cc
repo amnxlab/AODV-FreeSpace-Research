@@ -29,6 +29,30 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("ManetCompare1");
 
+// ========== GLOBAL PACKET TRACKING FOR PDR ==========
+// Track unique packet UIDs received at sink (handles multipath duplicates)
+static std::set<uint64_t> g_receivedPacketUids;
+static uint32_t g_totalSentPackets = 0;
+
+// Callback when sender transmits a packet
+void SenderTxCallback(Ptr<const Packet> packet)
+{
+    g_totalSentPackets++;
+}
+
+// Callback when sink receives a packet (deduplicates by UID)
+void SinkRxCallback(Ptr<Socket> socket)
+{
+    Ptr<Packet> packet;
+    Address from;
+    while ((packet = socket->RecvFrom(from)))
+    {
+        uint64_t uid = packet->GetUid();
+        g_receivedPacketUids.insert(uid); // Automatically deduplicates
+    }
+}
+// ========== END GLOBAL TRACKING ==========
+
 class ManetCompare1
 {
 public:
@@ -84,6 +108,10 @@ PrintReceivedPacket(Ptr<Socket> socket, Ptr<Packet> packet, Address senderAddres
 void
 ManetCompare1::ReceivePacket(Ptr<Socket> socket)
 {
+    // Use new callback for accurate PDR tracking
+    SinkRxCallback(socket);
+    
+    // Keep original throughput tracking
     Ptr<Packet> packet;
     Address senderAddress;
     while ((packet = socket->RecvFrom(senderAddress)))
@@ -148,6 +176,10 @@ main(int argc, char* argv[])
 void
 ManetCompare1::Run()
 {
+    // Reset global tracking variables for this run
+    g_receivedPacketUids.clear();
+    g_totalSentPackets = 0;
+    
     Packet::EnablePrinting();
 
     // Initialize CSV
@@ -216,7 +248,7 @@ ManetCompare1::Run()
     DsdvHelper dsdv;
     DsrHelper dsr;
     DsrMainHelper dsrMain;
-    gAodvHelper gaodv;
+    AodvHelper gaodv;  // Use AODV helper for GAODV temporarily
 
     InternetStackHelper internet;
     Ipv4ListRoutingHelper list;
@@ -286,7 +318,27 @@ ManetCompare1::Run()
         ApplicationContainer temp = onoff1.Install(adhocNodes.Get(i + m_nSinks));
         temp.Start(Seconds(var->GetValue(100.0, 101.0)));
         temp.Stop(Seconds(TotalTime));
-        packetsSent += 100; // 100 packets per source
+        
+        // Connect TX callback to track sent packets
+        for (uint32_t j = 0; j < temp.GetN(); j++)
+        {
+            Ptr<OnOffApplication> onoff = DynamicCast<OnOffApplication>(temp.Get(j));
+            if (onoff)
+            {
+                onoff->TraceConnectWithoutContext("Tx", MakeCallback(&SenderTxCallback));
+            }
+        }
+    }
+
+    // Store initial energy before simulation
+    std::vector<double> initialEnergy;
+    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    {
+        Ptr<energy::BasicEnergySource> es = energySources.Get(i)->GetObject<energy::BasicEnergySource>();
+        if (es)
+        {
+            initialEnergy.push_back(es->GetInitialEnergy());
+        }
     }
 
     // ▶️ Run
@@ -294,32 +346,65 @@ ManetCompare1::Run()
     Simulator::Stop(Seconds(TotalTime));
     Simulator::Run();
 
-    // Log final metrics
-    std::cout << "\n=== FINAL RESULTS ===" << std::endl;
+    // ========== CALCULATE METRICS ==========
+    std::cout << "\n===== FINAL RESULTS =====" << std::endl;
     std::cout << "Protocol: " << m_protocolName << std::endl;
 
-    // PDR
-    double pdr = (packetsSent > 0) ? static_cast<double>(packetsReceived) / packetsSent : 0.0;
-    std::cout << "PDR: " << pdr * 100 << "%" << std::endl;
+    // PDR - using unique packet tracking (handles multipath duplicates)
+    uint32_t uniqueReceived = g_receivedPacketUids.size();
+    double pdr = (g_totalSentPackets > 0) ? 
+                 static_cast<double>(uniqueReceived) / g_totalSentPackets : 0.0;
+    
+    std::cout << "\n--- Packet Delivery Ratio (PDR) ---" << std::endl;
+    std::cout << "Sender Sent: " << g_totalSentPackets << " pkts" << std::endl;
+    std::cout << "Sink Received (unique): " << uniqueReceived << " pkts" << std::endl;
+    std::cout << "PDR: " << (pdr * 100.0) << "%" << std::endl;
 
-    // Energy consumption
-    double totalInitial = 0.0, totalFinal = 0.0;
+    // Energy consumption - using stored initial values
+    double totalInitialEnergy = 0.0, totalFinalEnergy = 0.0;
     for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
     {
-        Ptr<BasicEnergySource> es = energySources.Get(i)->GetObject<BasicEnergySource>();
+        totalInitialEnergy += initialEnergy[i];
+        
+        Ptr<energy::BasicEnergySource> es = energySources.Get(i)->GetObject<energy::BasicEnergySource>();
         if (es)
         {
-            totalInitial += es->GetRemainingEnergy(); // This is initial energy
-            // Final energy after simulation
-            totalFinal += es->GetRemainingEnergy();
+            totalFinalEnergy += es->GetRemainingEnergy();
         }
     }
-    double energyConsumed = totalInitial - totalFinal;
-    std::cout << "Total Energy Consumed: " << energyConsumed << " J" << std::endl;
+    double energyConsumed = totalInitialEnergy - totalFinalEnergy;
+    
+    std::cout << "\n--- Energy Consumption ---" << std::endl;
+    std::cout << "Total Initial Energy: " << totalInitialEnergy << " J" << std::endl;
+    std::cout << "Total Consumed Energy: " << energyConsumed << " J" << std::endl;
+    std::cout << "Total Residual Energy: " << totalFinalEnergy << " J" << std::endl;
 
-    // Control Overhead (estimate)
-    // For GAODV/AODV, you can count RREQ/RREP in logs or use FlowMonitor
-    std::cout << "Control Overhead: Not implemented (use FlowMonitor for accuracy)" << std::endl;
+    // Export results to CSV
+    std::string resultsFile = "results_" + m_protocolName + ".csv";
+    std::ofstream csv(resultsFile, std::ios::app);
+    
+    // Write header if file is new
+    csv.seekp(0, std::ios::end);
+    if (csv.tellp() == 0)
+    {
+        csv << "protocol,nodes,simtime,txPower,packetsSent,packetsReceived,pdr,"
+            << "initialEnergy,consumedEnergy,residualEnergy" << std::endl;
+    }
+    
+    csv << m_protocolName << ","
+        << nWifis << ","
+        << TotalTime << ","
+        << m_txp << ","
+        << g_totalSentPackets << ","
+        << uniqueReceived << ","
+        << pdr << ","
+        << totalInitialEnergy << ","
+        << energyConsumed << ","
+        << totalFinalEnergy << std::endl;
+    
+    csv.close();
+    std::cout << "\nResults saved to: " << resultsFile << std::endl;
+    std::cout << "========================\n" << std::endl;
 
     Simulator::Destroy();
 }

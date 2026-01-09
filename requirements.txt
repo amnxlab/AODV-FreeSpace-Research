@@ -1,0 +1,5 @@
+# Python package requirements for automation scripts
+
+pandas>=1.3.0
+matplotlib>=3.4.0
+numpy>=1.21.0
