@@ -334,7 +334,7 @@ ManetCompare1::Run()
     std::vector<double> initialEnergy;
     for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
     {
-        Ptr<ns3::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::BasicEnergySource>();
+        Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
         if (es)
         {
             initialEnergy.push_back(es->GetInitialEnergy());
@@ -366,7 +366,7 @@ ManetCompare1::Run()
     {
         totalInitialEnergy += initialEnergy[i];
         
-        Ptr<ns3::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::BasicEnergySource>();
+        Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
         if (es)
         {
             totalFinalEnergy += es->GetRemainingEnergy();
