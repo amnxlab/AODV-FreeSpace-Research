@@ -13,7 +13,7 @@
 #include "ns3/applications-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/energy-module.h"
-#include "ns3/gaodv-module.h"      // ← GAODV support
+#include "ns3/gaodv-v1-helper.h"   // ← GAODV helper (V1)
 #include "ns3/aodv-module.h"       // ← AODV support
 #include "ns3/olsr-module.h"
 #include "ns3/dsdv-module.h"
@@ -105,19 +105,22 @@ PrintReceivedPacket(Ptr<Socket> socket, Ptr<Packet> packet, Address senderAddres
     return oss.str();
 }
 
+// Consolidated ReceivePacket to handle both PDR (Global) and Throughput (Local)
 void
 ManetCompare1::ReceivePacket(Ptr<Socket> socket)
 {
-    // Use new callback for accurate PDR tracking
-    SinkRxCallback(socket);
-    
-    // Keep original throughput tracking
     Ptr<Packet> packet;
     Address senderAddress;
     while ((packet = socket->RecvFrom(senderAddress)))
     {
+        // 1. PDR Tracking (Global Unique UIDs)
+        uint64_t uid = packet->GetUid();
+        g_receivedPacketUids.insert(uid);
+
+        // 2. Throughput Tracking (Local)
         bytesTotal += packet->GetSize();
         packetsReceived += 1;
+        
         NS_LOG_UNCOND(PrintReceivedPacket(socket, packet, senderAddress));
     }
 }
@@ -248,7 +251,7 @@ ManetCompare1::Run()
     DsdvHelper dsdv;
     DsrHelper dsr;
     DsrMainHelper dsrMain;
-    AodvHelper gaodv;  // Use AODV helper for GAODV temporarily
+    GaodvV1Helper gaodv;  // GAODV uses V1 implementation
 
     InternetStackHelper internet;
     Ipv4ListRoutingHelper list;
@@ -282,14 +285,16 @@ ManetCompare1::Run()
     }
     else if (m_protocolName == "GAODV")
     {
-        // Configure GAODV parameters for underwater
-        gaodv.Set("Ethf", DoubleValue(50.0));          // 10% of 500J
-        gaodv.Set("MaxRange", DoubleValue(250.0));      // Radio transmission range
-        gaodv.Set("PropagationSpeed", DoubleValue(1500.0)); // Underwater
-        gaodv.Set("W1", DoubleValue(0.4));              // Energy weight
-        gaodv.Set("W2", DoubleValue(0.3));              // Distance weight
-        gaodv.Set("W3", DoubleValue(0.2));              // Hop count weight
-        gaodv.Set("W4", DoubleValue(0.1));              // Delay weight
+        // GAODV: G-AODV flowchart with geometric routing and energy factors
+        gaodv.Set("Alpha", DoubleValue(0.6));
+        gaodv.Set("Ethf", DoubleValue(0.2));
+        gaodv.Set("MaxRange", DoubleValue(250.0));
+        gaodv.Set("InitialEnergy", DoubleValue(500.0));
+        gaodv.Set("EvaluationWindow", TimeValue(Seconds(2.0)));
+        gaodv.Set("W1", DoubleValue(0.25));
+        gaodv.Set("W2", DoubleValue(0.25));
+        gaodv.Set("W3", DoubleValue(0.25));
+        gaodv.Set("W4", DoubleValue(0.25));
         list.Add(gaodv, 100);
         internet.SetRoutingHelper(list);
         internet.Install(adhocNodes);

@@ -5,9 +5,14 @@ MANET Protocol Comparison Automation Tool
 Automates running NS-3 MANET simulations with parameter sweeping.
 Based on the methodology from NS3-Research project.
 
+Supports GAODV version selection:
+    --gaodv-version v0  → Uses gaodv-v0/ (original)
+    --gaodv-version v1  → Uses gaodv-v1/ (geometric/energy-aware)
+
 Usage:
     python3 run_all.py --protocols GAODV AODV --runs 10
-    python3 run_all.py --protocols GAODV --nodes 25 50 100 --txpower 5.0 7.5 10.0
+    python3 run_all.py --protocols GAODV --gaodv-version v1 --runs 5
+    python3 run_all.py --protocols GAODV-V0 GAODV-V1 AODV --runs 10
 """
 
 import subprocess
@@ -150,12 +155,28 @@ print(f"Sanitized program name: {PROGRAM_NAME}")
 NS3_PATH = None
 
 
+# ========== GAODV HELPERS ==========
+def get_gaodv_source_dir():
+    """Get source directory for GAODV (currently V1 implementation)."""
+    return PROJECT_DIR / "gaodv-v1"
+
+
+def uses_gaodv(protocols):
+    """Check if any protocol uses GAODV."""
+    return 'GAODV' in [p.upper() for p in protocols]
+
+
 # ========== SETUP FUNCTIONS ==========
-def setup_simulation(ns3_path, source_file):
-    """Copy simulation file to scratch folder and build."""
+def setup_simulation(ns3_path, source_file, copy_gaodv=False):
+    """Copy simulation file to scratch folder and build.
+    
+    Args:
+        ns3_path: Path to NS-3 installation
+        source_file: Main simulation source file
+        copy_gaodv: Whether to copy GAODV module to NS-3
+    """
     scratch_path = ns3_path / "scratch"
     # Use sanitized filename (CMake doesn't like spaces or trailing spaces)
-    # Use PROGRAM_NAME which has no extension
     dest_file = scratch_path / f"{PROGRAM_NAME}.cc"
     
     if not source_file.exists():
@@ -164,6 +185,20 @@ def setup_simulation(ns3_path, source_file):
     
     print(f"\nCopying {source_file.name} to {dest_file.name}...")
     shutil.copy2(source_file, dest_file)
+    
+    # Copy GAODV module to NS-3 src directory if needed
+    if copy_gaodv:
+        ns3_src = ns3_path / "src"
+        gaodv_src = get_gaodv_source_dir()
+        if gaodv_src.exists():
+            ns3_gaodv_dst = ns3_src / "gaodv-v1"
+            print(f"Copying GAODV module to NS-3 src/...")
+            if ns3_gaodv_dst.exists():
+                shutil.rmtree(ns3_gaodv_dst)
+            shutil.copytree(gaodv_src, ns3_gaodv_dst)
+            print(f"  → {ns3_gaodv_dst}")
+        else:
+            print(f"WARNING: GAODV source not found at {gaodv_src}")
     
     print("Building ns-3...")
     
@@ -198,17 +233,11 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number):
     """Run a single simulation experiment."""
     print(f"  Running: {protocol} | Nodes: {nodes} | TxPower: {txpower} | Run: {run_number}")
     
-    # Determine run command
+    # Determine run command - use string for shell=True
     if (ns3_path / "ns3").exists():
-        run_cmd = [
-            "./ns3", "run",
-            f'"{PROGRAM_NAME} --protocol={protocol}"'
-        ]
+        run_cmd = f'./ns3 run "{PROGRAM_NAME} --protocol={protocol}"'
     else:
-        run_cmd = [
-            "./waf", "--run",
-            f"{PROGRAM_NAME} --protocol={protocol}"
-        ]
+        run_cmd = f'./waf --run "{PROGRAM_NAME} --protocol={protocol}"'
     
     try:
         result = subprocess.run(
@@ -221,10 +250,11 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number):
         )
         
         if result.returncode == 0:
-            # Parse PDR from output
-            pdr_match = re.search(r'PDR:\s+([\d.]+)%', result.stdout)
-            sent_match = re.search(r'Sender Sent:\s+(\d+)', result.stdout)
-            recv_match = re.search(r'Sink Received.*:\s+(\d+)', result.stdout)
+            # Parse PDR from output (check both stdout and stderr as NS-3 logs to stderr)
+            output = result.stdout + result.stderr
+            pdr_match = re.search(r'PDR:\s+([\d.]+)%', output)
+            sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
+            recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
             
             pdr_str = f"PDR: {pdr_match.group(1)}%" if pdr_match else "PDR: N/A"
             if sent_match and recv_match:
@@ -251,17 +281,20 @@ def run_experiments(args):
     print(f"RUNNING EXPERIMENTS")
     print(f"{'='*70}\n")
     
+    # Check if GAODV is used
+    needs_gaodv = uses_gaodv(args.protocols)
+    
     # Set up simulation if not skipping build
     if not args.skip_build:
-        setup_simulation(args.ns3_path, args.source_file)
+        setup_simulation(args.ns3_path, args.source_file, copy_gaodv=needs_gaodv)
     
-    # Generate experiments
+    # Generate experiments (protocols used directly, no version mapping)
     experiments = []
     for protocol in args.protocols:
         for node_count in args.nodes:
             for txpower in args.txpower:
                 for run in range(1, args.runs + 1):
-                    experiments.append((protocol, node_count, txpower, run))
+                    experiments.append((protocol.upper(), node_count, txpower, run))
     
     print(f"Total experiments to run: {len(experiments)}\n")
     

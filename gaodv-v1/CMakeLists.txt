@@ -1,0 +1,27 @@
+build_lib(
+  LIBNAME gaodv-v1
+  SOURCE_FILES
+    gaodv-v1-dpd.cc
+    gaodv-v1-helper.cc
+    gaodv-v1-id-cache.cc
+    gaodv-v1-neighbors.cc
+    gaodv-v1-packet.cc
+    gaodv-v1-routing-protocol.cc
+    gaodv-v1-rqueue.cc
+    gaodv-v1-rtable.cc
+  HEADER_FILES
+    gaodv-v1-dpd.h
+    gaodv-v1-helper.h
+    gaodv-v1-id-cache.h
+    gaodv-v1-neighbors.h
+    gaodv-v1-packet.h
+    gaodv-v1-routing-protocol.h
+    gaodv-v1-rqueue.h
+    gaodv-v1-rtable.h
+  LIBRARIES_TO_LINK
+    ${libinternet}
+    ${libwifi}
+    ${libenergy}
+    ${libmobility}
+  TEST_SOURCES
+)

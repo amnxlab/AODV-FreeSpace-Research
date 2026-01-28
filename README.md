@@ -78,18 +78,25 @@ Underwater-MANET-Routing-protocols-GAODV-/
 │   ├── run_all.py                        # Main automation CLI
 │   ├── plot_results.py                   # Visualization (NS3-Research style)
 │   └── README.md                         # Detailed tool documentation
-├── gaodv/                                # GAODV protocol implementation
-│   └── model/                            # Protocol source files
+├── gaodv-v0/                             # GAODV-V0: Original energy-aware AODV
+│   ├── gaodv-routing-protocol.h/cc       # Main protocol
+│   ├── gaodv-packet.h/cc                 # Packet headers
+│   └── ...                               # Supporting modules
+├── gaodv-v1/                             # GAODV-V1: G-AODV Flowchart (14 files)
+│   ├── gaodv-v1-routing-protocol.h/cc    # Main protocol (1,400+ lines)
+│   ├── gaodv-v1-packet.h/cc              # RREQ with (x,y,z) & RREQEF
+│   ├── gaodv-v1-rtable.h/cc              # Routing table
+│   ├── gaodv-v1-rqueue.h/cc              # Packet queue
+│   ├── gaodv-v1-id-cache.h/cc            # Duplicate detection
+│   ├── gaodv-v1-neighbors.h/cc           # Neighbor management
+│   └── gaodv-v1-dpd.h/cc                 # Duplicate packet detection
+├── aodv/                                 # NS-3 Standard AODV (reference)
 ├── results/                              # Generated data
-│   └── aggregated_results.csv           # Combined experiment results
+│   └── aggregated_results.csv            # Combined experiment results
 ├── graphs/                               # Generated visualizations
-│   ├── pdr_comparison.png               # Grouped bar chart
-│   ├── energy_comparison.png            # Energy consumption chart
-│   ├── tradeoff_scatter.png             # PDR vs Energy scatter
-│   └── statistics.csv                   # Summary statistics
 ├── requirements.txt                      # Python dependencies
-├── verify_implementation.sh             # Verification script
-└── README.md                            # This file
+├── verify_implementation.sh              # Verification script
+└── README.md                             # This file
 ```
 
 ---
@@ -261,17 +268,128 @@ bash verify_implementation.sh
 
 ---
 
-## 🏗️ GAODV Module
+## 🏗️ GAODV Protocol Versions
 
-Successfully integrated GAODV (Geographic AODV) routing protocol:
+This project includes **two GAODV implementations**:
 
-**Installation:** `/home/ahmed/ns3/ns-allinone-3.42/ns-3.42/src/gaodv/`
+| Version | Directory | Description |
+|---------|-----------|-------------|
+| **GAODV-V0** | `gaodv-v0/` | Original energy-aware AODV |
+| **GAODV-V1** | `gaodv-v1/` | G-AODV flowchart implementation with geometric routing |
 
-**Features:**
-- Energy-aware routing
-- Geographic information support
-- Compatible with standard AODV interface
-- Custom parameters: `Ethf`, `MaxRange`, `W1-W4` weights
+---
+
+### Step 1: Choose Your GAODV Version
+
+```bash
+# Use GAODV-V0 (original, default)
+python3 scripts/run_all.py --protocols GAODV --gaodv-version v0
+
+# Use GAODV-V1 (flowchart-compliant, geometric)
+python3 scripts/run_all.py --protocols GAODV --gaodv-version v1
+
+# Compare both versions
+python3 scripts/run_all.py --protocols GAODV-V0 GAODV-V1 AODV --runs 10
+```
+
+---
+
+### Step 2: GAODV-V1 Features (G-AODV Flowchart)
+
+GAODV-V1 implements the complete G-AODV flowchart:
+
+**🔹 Geometric Awareness:**
+- RREQ packets carry 3D coordinates `(x, y, z)`
+- Position updated at each hop
+
+**🔹 Energy-Aware Routing (NEF/RREQEF):**
+- `NEF = residual_energy / initial_energy`
+- Threshold check: `NEF ≥ α × ETHF` (default: α=0.6, ETHF=0.2)
+- Low-energy nodes drop RREQ to preserve battery
+
+**🔹 Route Efficiency Factor (REF):**
+```
+REF = w1×RREQEF + w2×(1/dist) + w3×(1/hops) + w4×(1/delay)
+```
+Default weights: w1=w2=w3=w4=0.25
+
+**🔹 Destination RREQ Buffering:**
+- Timer T (default: 2.0s) collects multiple RREQs
+- Best REF path selected for RREP
+
+---
+
+### Step 3: Configure GAODV Parameters
+
+GAODV-V1 exposes NS-3 attributes for tuning:
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `Alpha` | 0.6 | Threshold factor (0.4-0.8) |
+| `Ethf` | 0.2 | Energy Threshold Factor |
+| `MaxRange` | 100.0 | Max communication range (m) |
+| `InitialEnergy` | 500.0 | Initial node energy (J) |
+| `EvaluationWindow` | 2.0s | Timer T for RREQ collection |
+| `W1`, `W2`, `W3`, `W4` | 0.25 each | REF calculation weights |
+| `PropagationSpeed` | 1500.0 | Signal speed (m/s) for underwater |
+
+---
+
+### Step 4: Run Experiments
+
+```bash
+# Step 4a: Navigate to project
+cd ~/Underwater-MANET-Routing-protocols-GAODV-
+
+# Step 4b: Run GAODV-V1 vs standard AODV
+python3 scripts/run_all.py \
+    --protocols GAODV-V1 AODV \
+    --nodes 25 50 100 \
+    --runs 10
+
+# Step 4c: Generate comparison plots
+python3 scripts/plot_results.py
+
+# Step 4d: View results
+cat results/aggregated_results.csv
+```
+
+---
+
+### Step 5: Verify Installation
+
+```bash
+# Check GAODV-V1 files exist
+ls -la gaodv-v1/
+
+# Expected output (14 files):
+# gaodv-v1-routing-protocol.h/cc
+# gaodv-v1-packet.h/cc
+# gaodv-v1-rtable.h/cc
+# gaodv-v1-rqueue.h/cc
+# gaodv-v1-id-cache.h/cc
+# gaodv-v1-neighbors.h/cc
+# gaodv-v1-dpd.h/cc
+```
+
+---
+
+### GAODV-V1 G-AODV Flowchart Decision Points
+
+| Decision | Action |
+|----------|--------|
+| Source needs route? | Check routing table |
+| Valid route exists? | Forward via next hop |
+| No route? | Flood RREQ with (x,y,z) & RREQEF |
+| Am I destination? | Buffer RREQ, start Timer T |
+| 1st RREQ for this request? | Start evaluation timer |
+| Timer T expired? | Select highest REF path, send RREP |
+| Intermediate with route? | Send RREP (if not destination-only) |
+| NEF ≥ α×ETHF? | Continue processing |
+| NEF < α×ETHF? | Drop RREQ (low energy) |
+| NEF < RREQEF? | Update RREQEF = NEF |
+| Always | Update position (x,y,z) |
+| Pass all checks? | Rebroadcast RREQ |
 
 ---
 
@@ -295,7 +413,8 @@ Default values in `manet-compare free spaceV1 .cc`:
 | OLSR | Optimized Link State Routing | ✅ |
 | DSDV | Destination-Sequenced Distance Vector | ✅ |
 | DSR | Dynamic Source Routing | ✅ |
-| GAODV | Geographic AODV | ✅ |
+| GAODV-V0 | Energy-aware AODV (original) | ✅ |
+| GAODV-V1 | G-AODV Flowchart (geometric + energy) | ✅ |
 
 ---
 
