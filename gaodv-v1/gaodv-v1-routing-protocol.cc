@@ -235,7 +235,7 @@ RoutingProtocol::DoInitialize()
 {
     NS_LOG_FUNCTION(this);
     
-    if (m_enableHello && !m_htimer.IsPending())
+    if (m_enableHello && !m_htimer.IsRunning())
     {
         m_htimer.SetFunction(&RoutingProtocol::HelloTimerExpire, this);
         uint32_t startTime = m_uniformRandomVariable->GetInteger(0, 100);
@@ -1052,7 +1052,7 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         NS_LOG_UNCOND("RecvRequest: Buffered RREQ count = " << m_bufferedRreqs.size());
         
         // Start Timer T if this is first RREQ for this request
-        if (!m_evaluationTimer.IsPending())
+        if (!m_evaluationTimer.IsRunning())
         {
             m_evaluationTimer = Simulator::Schedule(m_evaluationWindow,
                                                     &RoutingProtocol::EvaluateAndSendRrep,
