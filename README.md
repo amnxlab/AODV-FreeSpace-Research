@@ -127,7 +127,190 @@ Underwater-MANET-Routing-protocols-GAODV-/
 
 ---
 
-## 🔬 Implementation Details
+## � Command-Line Interface (CLI) Reference
+
+### Full Parameter List
+
+```bash
+python3 scripts/run_all.py [OPTIONS]
+```
+
+| Parameter | Description | Default | Example |
+|-----------|-------------|---------|---------|
+| `--protocols` | Protocols to test | `['GAODV']` | `--protocols AODV GAODV OLSR` |
+| `--nodes` | Number of nodes | `[50]` | `--nodes 25 50 100` |
+| `--txpower` | TX power (dBm) | `[7.5]` | `--txpower 5.0 7.5 10.0` |
+| `--runs` | Runs per config | `5` | `--runs 10` |
+| `--ns3-path` | NS-3 directory | Auto-detect | `--ns3-path /path/to/ns3` |
+| `--skip-build` | Skip rebuild | `False` | `--skip-build` |
+
+### Usage Examples
+
+#### Example 1: Quick Single Protocol Test
+```bash
+# Test GAODV with default settings (50 nodes, 5 runs)
+python3 scripts/run_all.py --protocols GAODV
+```
+
+**Expected Output:**
+```
+Protocol: GAODV
+Nodes: 50 (10 sinks, 40 sources)
+WiFi: 802.11a, OfdmRate6Mbps, Default channel
+Grid spacing: 120m (matching AODV test)
+Simulation time: 500s
+
+Experiment 1/5: GAODV, nodes=50, txpower=7.5, run=1
+  PDR: 85.3%
+  Energy Consumed: 1234.5 J
+```
+
+#### Example 2: Protocol Comparison
+```bash
+# Compare AODV vs GAODV with 10 runs each
+python3 scripts/run_all.py --protocols AODV GAODV --runs 10
+```
+
+**Output:**
+- 20 total experiments (2 protocols × 1 node config × 10 runs)
+- Results in `results/aggregated_results.csv`
+- Individual CSVs: `results_AODV.csv`, `results_GAODV.csv`
+
+#### Example 3: Multi-Node Scalability Test
+```bash
+# Test scalability across 25, 50, and 100 nodes
+python3 scripts/run_all.py \
+    --protocols GAODV \
+    --nodes 25 50 100 \
+    --runs 5
+```
+
+**Output:**
+- 15 experiments (1 protocol × 3 node configs × 5 runs)
+- Compare PDR degradation as network grows
+- Statistical analysis with mean ± std
+
+#### Example 4: TX Power Sensitivity
+```bash
+# Test how TX power affects PDR
+python3 scripts/run_all.py \
+    --protocols AODV GAODV \
+    --txpower 5.0 7.5 10.0 15.0 \
+    --runs 5
+```
+
+**Output:**
+- 40 experiments (2 protocols × 4 TX powers × 5 runs)
+- Analyze power efficiency vs connectivity
+- Identify optimal TX power
+
+#### Example 5: Full Comparison Suite
+```bash
+# Comprehensive comparison (⚠️ Long runtime!)
+python3 scripts/run_all.py \
+    --protocols AODV OLSR DSDV GAODV \
+    --nodes 25 50 100 \
+    --txpower 5.0 7.5 10.0 \
+    --runs 10
+```
+
+**Output:**
+- 360 experiments (4 protocols × 3 node configs × 3 TX powers × 10 runs)
+- Complete protocol performance matrix
+- Publication-ready statistics
+
+#### Example 6: Custom NS-3 Path
+```bash
+# Specify non-standard NS-3 installation
+python3 scripts/run_all.py \
+    --ns3-path /opt/ns-allinone-3.42/ns-3.42 \
+    --protocols GAODV \
+    --runs 5
+```
+
+#### Example 7: Quick Test (Skip Build)
+```bash
+# Skip rebuild if NS-3 code unchanged
+python3 scripts/run_all.py \
+    --protocols GAODV \
+    --runs 3 \
+    --skip-build
+```
+
+**Use Case:** Faster iteration when only changing Python scripts or analyzing existing data
+
+#### Example 8: Minimal 2-Node Validation
+```bash
+# Quick validation test (modify run_all.py to accept custom node counts)
+python3 scripts/run_all.py \
+    --protocols GAODV \
+    --nodes 2 \
+    --runs 1
+```
+
+**Expected:** PDR ~99.7% for GAODV (based on recent fixes)
+
+---
+
+## 🛠️ Advanced Usage
+
+### Parameter Sweep Workflow
+
+**Step 1:** Run parameter sweep
+```bash
+python3 scripts/run_all.py \
+    --protocols AODV GAODV OLSR \
+    --nodes 25 50 75 100 \
+    --runs 10
+```
+
+**Step 2:** Generate plots
+```bash
+python3 scripts/plot_results.py
+```
+
+**Step 3:** Analyze results
+```bash
+# View aggregated CSV
+cat results/aggregated_results.csv
+
+# Statistical summary
+python3 -c "
+import pandas as pd
+df = pd.read_csv('results/aggregated_results.csv')
+print(df.groupby(['protocol', 'nodes'])['pdr'].describe())
+"
+```
+
+### Custom Modifications
+
+#### Modify Simulation Parameters
+Edit `src/manet-compare free spaceV1 .cc`:
+
+```cpp
+// Change simulation time
+double TotalTime = 500.0;  // Default: 500 seconds
+
+// Change number of sinks
+int m_nSinks{10};  // Default: 10 sinks for 50 nodes
+
+// Change grid spacing
+"DeltaX", DoubleValue(120.0),  // Default: 120m spacing
+```
+
+#### Modify GAODV Parameters
+Edit GAODV configuration in simulation:
+
+```cpp
+gaodv.Set("Alpha", DoubleValue(0.6));          // Energy weight
+gaodv.Set("Ethf", DoubleValue(0.2));           // Energy threshold
+gaodv.Set("MaxRange", DoubleValue(250.0));     // Max transmission range
+gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));  // Metric window
+```
+
+---
+
+## �🔬 Implementation Details
 
 ### PDR Calculation
 
