@@ -40,6 +40,13 @@ void SenderTxCallback(Ptr<const Packet> packet)
     g_totalSentPackets++;
 }
 
+// Callback when WiFi PHY drops a packet
+void PhyRxDropCallback(Ptr<const Packet> packet, WifiPhyRxfailureReason reason)
+{
+    NS_LOG_UNCOND("PhyRxDrop at t=" << Simulator::Now().GetSeconds() 
+                  << "s reason=" << reason << " packetSize=" << packet->GetSize());
+}
+
 // Callback when sink receives a packet (deduplicates by UID)
 void SinkRxCallback(Ptr<Socket> socket)
 {
@@ -71,7 +78,7 @@ private:
     uint32_t packetsSent{0};  // Total packets sent by sources
 
     std::string m_CSVfileName{"manet-compare-1.csv"};
-    int m_nSinks{10};
+    int m_nSinks{10};  // Number of sink nodes (receivers) - default 10 for 50-node simulation
     std::string m_protocolName{"GAODV"};
     double m_txp{7.5};
     bool m_traceMobility{false};
@@ -82,10 +89,14 @@ private:
     std::vector<double> m_finalEnergy;
     uint32_t m_rreqCount{0};
     uint32_t m_rrepCount{0};
+    
+    // Random number generator for application start times
+    Ptr<UniformRandomVariable> m_uniformRandomVariable;
 };
 
 ManetCompare1::ManetCompare1()
 {
+    m_uniformRandomVariable = CreateObject<UniformRandomVariable>();
 }
 
 static inline std::string
@@ -190,12 +201,23 @@ ManetCompare1::Run()
     out << "SimulationSecond,Throughput_kbps,PacketsReceived,NumberOfSinks,RoutingProtocol,TransmissionPower" << std::endl;
     out.close();
 
-    int nWifis = 50;
-    double TotalTime = 500.0;  // 500 seconds
+    int nWifis = 50;  // Default: 50 nodes for full simulation
+    double TotalTime = 500.0;  // Simulation duration - increased to allow all nodes to communicate
     std::string rate("2048bps");
-    std::string phyMode("DsssRate11Mbps");
-    int nodeSpeed = 20;
-    int nodePause = 0;
+    std::string phyMode("OfdmRate6Mbps");  // Match 802.11a - AODV test uses OfdmRate6Mbps
+    
+    // ========== Network connectivity parameters ==========
+    // Use default WiFi TX power (no explicit setting) - matches AODV test
+    // m_txp is set from command line or uses class default
+    
+    std::cout << "\n========== SIMULATION PARAMETERS ==========" << std::endl;
+    std::cout << "Protocol: " << m_protocolName << std::endl;
+    std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
+    std::cout << "WiFi: 802.11a, OfdmRate6Mbps, Default channel" << std::endl;
+    std::cout << "Grid spacing: 120m (matching AODV test)" << std::endl;
+    std::cout << "Application start: Random 100-101s" << std::endl;
+    std::cout << "Simulation time: " << TotalTime << "s" << std::endl;
+    std::cout << "==========================================\n" << std::endl;
 
     Config::SetDefault("ns3::OnOffApplication::PacketSize", StringValue("64"));
     Config::SetDefault("ns3::OnOffApplication::DataRate", StringValue(rate));
@@ -204,45 +226,53 @@ ManetCompare1::Run()
     NodeContainer adhocNodes;
     adhocNodes.Create(nWifis);
 
-    // 🔋 Install Energy Source (500 J per node)
-    BasicEnergySourceHelper energyHelper;
-    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(500.0));
-    auto energySources = energyHelper.Install(adhocNodes);
+    // 🔋 Energy Source - DISABLED for now to test WiFi
+    // BasicEnergySourceHelper energyHelper;
+    // energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(500.0));
+    // auto energySources = energyHelper.Install(adhocNodes);
 
-    // 📶 Wi-Fi setup
+    // 📶 Wi-Fi setup - MATCH AODV test configuration EXACTLY
     WifiHelper wifi;
-    wifi.SetStandard(WIFI_STANDARD_80211b);
+    wifi.SetStandard(WIFI_STANDARD_80211a);  // AODV test uses 802.11a!
+    
     YansWifiPhyHelper wifiPhy;
-    YansWifiChannelHelper wifiChannel;
-    wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-    wifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel");
-    wifiPhy.SetChannel(wifiChannel.Create());
-    wifiPhy.Set("TxPowerStart", DoubleValue(m_txp));
-    wifiPhy.Set("TxPowerEnd", DoubleValue(m_txp));
-
+    
+    // ========== CRITICAL: Match AODV test exactly ==========
+    wifiPhy.DisablePreambleDetectionModel();
+    wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");  // AODV test uses YansErrorRateModel
+    
+    YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();  // Use Default() like AODV test
+    Ptr<YansWifiChannel> chan = wifiChannel.Create();
+    wifiPhy.SetChannel(chan);
+    
+    // Add mac - MATCH AODV test exactly
     WifiMacHelper wifiMac;
-    wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                                 "DataMode", StringValue(phyMode),
-                                 "ControlMode", StringValue(phyMode));
     wifiMac.SetType("ns3::AdhocWifiMac");
+    wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                                 "DataMode", StringValue("OfdmRate6Mbps"),  // AODV test uses OfdmRate6Mbps
+                                 "RtsCtsThreshold", StringValue("2200"));
     NetDeviceContainer adhocDevices = wifi.Install(wifiPhy, wifiMac, adhocNodes);
 
-    // 🚶 Mobility (Random Waypoint)
+    // Enable PCAP tracing on all nodes for debugging
+    wifiPhy.EnablePcap("gaodv-test", adhocDevices);
+    
+    // Add PhyRxDrop trace to diagnose reception failures
+    Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyRxDrop",
+                                  MakeCallback(&PhyRxDropCallback));
+
+    // 🚶 Mobility - Grid positioning MATCHING AODV test (120m spacing)
     MobilityHelper mobilityAdhoc;
-    ObjectFactory pos;
-    pos.SetTypeId("ns3::RandomRectanglePositionAllocator");
-    pos.Set("X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=400.0]"));  // 400m x 800m area
-    pos.Set("Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=800.0]"));
-    Ptr<PositionAllocator> taPositionAlloc = pos.Create()->GetObject<PositionAllocator>();
-    std::stringstream ssSpeed;
-    ssSpeed << "ns3::UniformRandomVariable[Min=0.0|Max=" << nodeSpeed << "]";
-    std::stringstream ssPause;
-    ssPause << "ns3::ConstantRandomVariable[Constant=" << nodePause << "]";
-    mobilityAdhoc.SetMobilityModel("ns3::RandomWaypointMobilityModel",
-                                   "Speed", StringValue(ssSpeed.str()),
-                                   "Pause", StringValue(ssPause.str()),
-                                   "PositionAllocator", PointerValue(taPositionAlloc));
-    mobilityAdhoc.SetPositionAllocator(taPositionAlloc);
+    
+    // Use GridPositionAllocator matching AODV test exactly
+    mobilityAdhoc.SetPositionAllocator("ns3::GridPositionAllocator",
+                                      "MinX", DoubleValue(0.0),
+                                      "MinY", DoubleValue(0.0),
+                                      "DeltaX", DoubleValue(120.0),  // AODV test uses 120m spacing
+                                      "DeltaY", DoubleValue(0),
+                                      "GridWidth", UintegerValue(nWifis),
+                                      "LayoutType", StringValue("RowFirst"));
+    
+    mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobilityAdhoc.Install(adhocNodes);
 
     // 🧭 Routing protocol setup
@@ -286,11 +316,17 @@ ManetCompare1::Run()
     else if (m_protocolName == "GAODV")
     {
         // GAODV: G-AODV flowchart with geometric routing and energy factors
+        // Enable comprehensive logging for debugging PDR issue
+        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_LEVEL_ALL);
+        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_TIME);
+        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_NODE);
+        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_FUNC);
+        
         gaodv.Set("Alpha", DoubleValue(0.6));
         gaodv.Set("Ethf", DoubleValue(0.2));
-        gaodv.Set("MaxRange", DoubleValue(250.0));
+        gaodv.Set("MaxRange", DoubleValue(250.0));  // Matches TX power range
         gaodv.Set("InitialEnergy", DoubleValue(500.0));
-        gaodv.Set("EvaluationWindow", TimeValue(Seconds(2.0)));
+        gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));  // Reduced from 2s to 1s
         gaodv.Set("W1", DoubleValue(0.25));
         gaodv.Set("W2", DoubleValue(0.25));
         gaodv.Set("W3", DoubleValue(0.25));
@@ -319,9 +355,12 @@ ManetCompare1::Run()
         Ptr<Socket> sink = SetupPacketReceive(adhocInterfaces.GetAddress(i), adhocNodes.Get(i));
         AddressValue remoteAddress(InetSocketAddress(adhocInterfaces.GetAddress(i), port));
         onoff1.SetAttribute("Remote", remoteAddress);
-        Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable>();
+        
+        // Stagger start times: random between 100-101s to allow routing to establish
+        // Use uniform random to avoid simultaneous starts
+        double startTime = 100.0 + m_uniformRandomVariable->GetValue(0.0, 1.0);
         ApplicationContainer temp = onoff1.Install(adhocNodes.Get(i + m_nSinks));
-        temp.Start(Seconds(var->GetValue(100.0, 101.0)));
+        temp.Start(Seconds(startTime));
         temp.Stop(Seconds(TotalTime));
         
         // Connect TX callback to track sent packets
@@ -335,19 +374,32 @@ ManetCompare1::Run()
         }
     }
 
-    // Store initial energy before simulation
+    // Store initial energy before simulation - DISABLED
     std::vector<double> initialEnergy;
-    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
-    {
-        Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
-        if (es)
-        {
-            initialEnergy.push_back(es->GetInitialEnergy());
-        }
-    }
+    // for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    // {
+    //     Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
+    //     if (es)
+    //     {
+    //         initialEnergy.push_back(es->GetInitialEnergy());
+    //     }
+    // }
 
     // ▶️ Run
     CheckThroughput();
+    
+    // Log node positions for debugging
+    std::cout << "\n========== NODE POSITIONS AT START ==========" << std::endl;
+    for (uint32_t i = 0; i < std::min(adhocNodes.GetN(), (uint32_t)10); ++i)
+    {
+        Ptr<MobilityModel> mobility = adhocNodes.Get(i)->GetObject<MobilityModel>();
+        Vector pos = mobility->GetPosition();
+        std::cout << "Node " << i << " (" << adhocInterfaces.GetAddress(i) << "): "
+                  << "(" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
+    }
+    std::cout << "... (" << adhocNodes.GetN() << " nodes total)" << std::endl;
+    std::cout << "============================================\n" << std::endl;
+    
     Simulator::Stop(Seconds(TotalTime));
     Simulator::Run();
 
@@ -365,18 +417,18 @@ ManetCompare1::Run()
     std::cout << "Sink Received (unique): " << uniqueReceived << " pkts" << std::endl;
     std::cout << "PDR: " << (pdr * 100.0) << "%" << std::endl;
 
-    // Energy consumption - using stored initial values
+    // Energy consumption - DISABLED
     double totalInitialEnergy = 0.0, totalFinalEnergy = 0.0;
-    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
-    {
-        totalInitialEnergy += initialEnergy[i];
-        
-        Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
-        if (es)
-        {
-            totalFinalEnergy += es->GetRemainingEnergy();
-        }
-    }
+    // for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    // {
+    //     totalInitialEnergy += initialEnergy[i];
+    //     
+    //     Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
+    //     if (es)
+    //     {
+    //         totalFinalEnergy += es->GetRemainingEnergy();
+    //     }
+    // }
     double energyConsumed = totalInitialEnergy - totalFinalEnergy;
     
     std::cout << "\n--- Energy Consumption ---" << std::endl;

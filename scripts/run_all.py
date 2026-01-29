@@ -250,17 +250,34 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number):
         )
         
         if result.returncode == 0:
-            # Parse PDR from output (check both stdout and stderr as NS-3 logs to stderr)
+            # Parse metrics from output (check both stdout and stderr as NS-3 logs to stderr)
             output = result.stdout + result.stderr
             pdr_match = re.search(r'PDR:\s+([\d.]+)%', output)
             sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
             recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
+            energy_match = re.search(r'Total Consumed Energy:\s+([\d.]+)', output)
             
-            pdr_str = f"PDR: {pdr_match.group(1)}%" if pdr_match else "PDR: N/A"
+            # Build output string with all available metrics
+            metrics = []
+            if pdr_match:
+                metrics.append(f"PDR: {pdr_match.group(1)}%")
+            else:
+                metrics.append("PDR: N/A")
+            
             if sent_match and recv_match:
-                pdr_str += f" (Sent: {sent_match.group(1)}, Recv: {recv_match.group(1)})"
+                sent = int(sent_match.group(1))
+                recv = int(recv_match.group(1))
+                metrics.append(f"Sent: {sent}")
+                metrics.append(f"Recv: {recv}")
+                # Calculate throughput (packets per 500 seconds with 64 byte packets)
+                if sent > 0:
+                    throughput_kbps = (recv * 64 * 8) / 500 / 1000
+                    metrics.append(f"Throughput: {throughput_kbps:.2f} kbps")
             
-            print(f"    ✓ {pdr_str}")
+            if energy_match:
+                metrics.append(f"Energy: {float(energy_match.group(1)):.1f}J")
+            
+            print(f"    ✓ {' | '.join(metrics)}")
             return True
         else:
             print(f"    ✗ Failed")

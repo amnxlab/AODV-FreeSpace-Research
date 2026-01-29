@@ -98,6 +98,7 @@ public:
 
 protected:
     void DoInitialize() override;
+    void Start();
     void DoDispose() override;
 
 private:
