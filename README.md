@@ -189,7 +189,7 @@ ls -lh graphs/
 ```
 Underwater-MANET-Routing-protocols-GAODV-/
 ├── src/
-│   └── manet-compare free spaceV1 .cc    # Enhanced NS-3 simulation
+│   └── manet-compare-freespace-v1.cc    # Enhanced NS-3 simulation
 ├── scripts/
 │   ├── run_all.py                        # Main automation CLI
 │   ├── plot_results.py                   # Visualization (NS3-Research style)
@@ -216,8 +216,8 @@ Underwater-MANET-Routing-protocols-GAODV-/
 └── README.md                             # This file
 
 **Key Simulation File:**
-- `src/manet-compare free spaceV1 .cc` - Main NS-3 simulation with **working 802.11a WiFi config**
-  - Automatically copied to `<ns3-path>/scratch/manet-compare_free_spaceV1.cc`
+- `src/manet-compare-freespace-v1.cc` - Main NS-3 simulation with **working 802.11a WiFi config**
+  - Automatically copied to `<ns3-path>/scratch/manet-compare-freespace-v1.cc`
   - Uses **802.11a OfdmRate6Mbps** (matching AODV test suite)
   - Configurable via CLI: nodes, TX power, protocol selection
   - Produces per-run CSV results
@@ -383,7 +383,7 @@ print(df.groupby(['protocol', 'nodes'])['pdr'].describe())
 ### Custom Modifications
 
 #### Modify Simulation Parameters
-Edit `src/manet-compare free spaceV1 .cc`:
+Edit `src/manet-compare-freespace-v1.cc`:
 
 ```cpp
 // Change simulation time
@@ -668,7 +668,7 @@ ls -la /path/to/ns-3.42/src/gaodv-v1/
 
 # 3. Check for C++ syntax errors
 g++ -std=c++17 -fsyntax-only \
-    "src/manet-compare free spaceV1 .cc" \
+    "src/manet-compare-freespace-v1.cc" \
     -I/path/to/ns-3.42/build/include
 ```
 
@@ -803,7 +803,7 @@ double TotalTime = 500.0;  // 500 seconds simulation
 
 ### Enable Verbose Logging
 
-Edit `src/manet-compare free spaceV1 .cc`:
+Edit `src/manet-compare-freespace-v1.cc`:
 
 ```cpp
 // Enable GAODV logging
@@ -1006,7 +1006,7 @@ ls -la gaodv-v1/
 
 ### Simulation Parameters
 
-Default values in `manet-compare free spaceV1 .cc`:
+Default values in `manet-compare-freespace-v1.cc`:
 - **Nodes:** 50
 - **Simulation Time:** 500 seconds
 - **Packet Size:** 64 bytes
@@ -1146,7 +1146,7 @@ cd /path/to/ns3
 ./ns3 build gaodv-v1
 
 # Run single simulation manually
-./ns3 run "scratch/manet-compare_free_spaceV1 \
+./ns3 run "scratch/manet-compare-freespace-v1 \
   --protocol=GAODV --nWifis=50 --txpower=7.5"
 
 # Check AODV tests (validation)
@@ -1154,7 +1154,7 @@ cd /path/to/ns3
 
 # Debug with verbose logging
 export NS_LOG=GaodvV1RoutingProtocol=level_debug
-./ns3 run "scratch/manet-compare_free_spaceV1 --protocol=GAODV"
+./ns3 run "scratch/manet-compare-freespace-v1 --protocol=GAODV"
 ```
 
 ---

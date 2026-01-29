@@ -8,7 +8,7 @@ echo
 
 # Test 1: Check C++ file syntax
 echo "[Test 1] Checking C++ file exists and has required components..."
-SRC_FILE="src/manet-compare free spaceV1 .cc"
+SRC_FILE="src/manet-compare-freespace-v1.cc"
 
 if [ ! -f "$SRC_FILE" ]; then
     echo "✗ FAIL: Source file not found"
