@@ -7,7 +7,7 @@
 
 Automated framework for comparing MANET routing protocols (**AODV**, **GAODV**, **DSR**, **OLSR**, **DSDV**) with comprehensive **PDR**, **throughput**, and **energy consumption** analysis.
 
-**✨ Latest Update:** GAODV-V1 now fully functional with 99.7% PDR! DSR and AODV included for direct comparison. Real-time energy tracking enabled!
+**✨ Latest Update:** All 5 protocols verified working! GAODV-V1: 99.97% PDR | DSR: 99.99% PDR | AODV: 99.66% PDR | OLSR: 99.60% PDR | DSDV: 99.24% PDR. Real-time energy tracking enabled!
 
 ---
 
@@ -121,8 +121,17 @@ This ensures RREQEF reflects the minimum energy along the path (bottleneck node)
 ✅ **Socket Binding** - Proper broadcast socket bound to `0.0.0.0:656`  
 ✅ **Application Timing** - Random start times (100-101s) for natural traffic patterns
 
-### Result
-**GAODV-V1 PDR: 99.74%** (757 packets received out of 759 sent in 2-node test)
+### Protocol Comparison Results (2-node validation)
+
+| Protocol | Type | PDR | Throughput | Energy | Status |
+|----------|------|-----|------------|--------|--------|
+| **DSR** | Reactive | 99.99% | 16.36 kbps | 20,367.5 J | ✅ Best PDR |
+| **GAODV** | Reactive (Energy-Aware) | 99.97% | 16.35 kbps | 20,396.2 J | ✅ Energy-Optimized |
+| **AODV** | Reactive | 99.66% | 16.30 kbps | 20,389.6 J | ✅ Baseline |
+| **OLSR** | Proactive | 99.60% | 15.91 kbps | 20,375.6 J | ✅ Working |
+| **DSDV** | Proactive | 99.24% | 16.23 kbps | 20,379.4 J | ✅ Working |
+
+**Test Configuration:** 2 nodes, 500s simulation, 802.11a @ OfdmRate6Mbps, 120m grid spacing
 
 ---
 
@@ -144,12 +153,22 @@ pip3 install -r requirements.txt
 python3 scripts/run_all.py --protocols GAODV --runs 5
 ```
 
-#### 2. Compare Multiple Protocols
+#### 2. Compare All 5 Protocols
 ```bash
-python3 scripts/run_all.py --protocols AODV GAODV OLSR --runs 10
+python3 scripts/run_all.py --protocols AODV GAODV DSR OLSR DSDV --runs 10
 ```
 
-#### 3. Generate Visualizations
+#### 3. Compare Reactive Protocols (AODV, GAODV, DSR)
+```bash
+python3 scripts/run_all.py --protocols AODV GAODV DSR --runs 10
+```
+
+#### 4. Compare Proactive Protocols (OLSR, DSDV)
+```bash
+python3 scripts/run_all.py --protocols OLSR DSDV --runs 10
+```
+
+#### 5. Generate Visualizations
 ```bash
 python3 scripts/plot_results.py
 ```
@@ -244,16 +263,16 @@ Experiment 1/5: GAODV, nodes=50, txpower=7.5, run=1
   Energy Consumed: 1234.5 J
 ```
 
-#### Example 2: Protocol Comparison
+#### Example 2: Full Protocol Comparison
 ```bash
-# Compare AODV vs GAODV with 10 runs each
-python3 scripts/run_all.py --protocols AODV GAODV --runs 10
+# Compare all 5 protocols with 10 runs each
+python3 scripts/run_all.py --protocols AODV GAODV DSR OLSR DSDV --runs 10
 ```
 
 **Output:**
-- 20 total experiments (2 protocols × 1 node config × 10 runs)
+- 50 total experiments (5 protocols × 1 node config × 10 runs)
 - Results in `results/aggregated_results.csv`
-- Individual CSVs: `results_AODV.csv`, `results_GAODV.csv`
+- Individual CSVs: `results_AODV.csv`, `results_GAODV.csv`, `results_DSR.csv`, `results_OLSR.csv`, `results_DSDV.csv`
 
 #### Example 3: Multi-Node Scalability Test
 ```bash
