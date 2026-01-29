@@ -315,7 +315,7 @@ RoutingProtocol::SetIpv4(Ptr<Ipv4> ipv4)
 double
 RoutingProtocol::ComputeNef() const
 {
-    Ptr<energy::EnergySource> energySrc = m_node->GetObject<energy::EnergySource>();
+    Ptr<EnergySource> energySrc = m_node->GetObject<EnergySource>();
     if (energySrc)
     {
         double residual = energySrc->GetRemainingEnergy();
