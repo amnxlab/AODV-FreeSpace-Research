@@ -235,7 +235,7 @@ RoutingProtocol::DoInitialize()
 {
     NS_LOG_FUNCTION(this);
     
-    if (m_enableHello && !m_htimer.IsRunning())
+    if (m_enableHello && !m_htimer.IsPending())
     {
         m_htimer.SetFunction(&RoutingProtocol::HelloTimerExpire, this);
         uint32_t startTime = m_uniformRandomVariable->GetInteger(0, 100);
