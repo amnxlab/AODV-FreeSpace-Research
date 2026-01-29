@@ -245,7 +245,7 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number):
             cwd=ns3_path,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minute timeout
+            timeout=900,  # 15 minute timeout (simulations can run 500+ seconds)
             shell=True
         )
         

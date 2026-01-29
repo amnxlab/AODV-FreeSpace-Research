@@ -79,6 +79,8 @@ private:
 
     std::string m_CSVfileName{"manet-compare-1.csv"};
     int m_nSinks{10};  // Number of sink nodes (receivers) - default 10 for 50-node simulation
+    int m_nWifis{50};  // Number of total nodes - default 50
+    double m_totalTime{500.0};  // Simulation duration in seconds - default 500s
     std::string m_protocolName{"GAODV"};
     double m_txp{7.5};
     bool m_traceMobility{false};
@@ -169,6 +171,10 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("traceMobility", "Enable mobility tracing", m_traceMobility);
     cmd.AddValue("protocol", "Routing protocol (OLSR, AODV, DSDV, DSR, GAODV)", m_protocolName);
     cmd.AddValue("flowMonitor", "enable FlowMonitor", m_flowMonitor);
+    cmd.AddValue("nWifis", "Number of nodes", m_nWifis);
+    cmd.AddValue("nSinks", "Number of sink nodes", m_nSinks);
+    cmd.AddValue("totalTime", "Simulation time in seconds", m_totalTime);
+    cmd.AddValue("txpower", "Transmission power in dBm", m_txp);
     cmd.Parse(argc, argv);
 
     std::vector<std::string> allowedProtocols{"OLSR", "AODV", "DSDV", "DSR", "GAODV"};
@@ -201,21 +207,22 @@ ManetCompare1::Run()
     out << "SimulationSecond,Throughput_kbps,PacketsReceived,NumberOfSinks,RoutingProtocol,TransmissionPower" << std::endl;
     out.close();
 
-    int nWifis = 50;  // Default: 50 nodes for full simulation
-    double TotalTime = 500.0;  // Simulation duration - increased to allow all nodes to communicate
+    // Use member variables (configurable via command line)
+    int nWifis = m_nWifis;
+    double TotalTime = m_totalTime;
     std::string rate("2048bps");
     std::string phyMode("OfdmRate6Mbps");  // Match 802.11a - AODV test uses OfdmRate6Mbps
     
     // ========== Network connectivity parameters ==========
-    // Use default WiFi TX power (no explicit setting) - matches AODV test
-    // m_txp is set from command line or uses class default
+    // m_txp is configurable from command line (default 7.5 dBm)
     
     std::cout << "\n========== SIMULATION PARAMETERS ==========" << std::endl;
     std::cout << "Protocol: " << m_protocolName << std::endl;
     std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
     std::cout << "WiFi: 802.11a, OfdmRate6Mbps, Default channel" << std::endl;
+    std::cout << "TX Power: " << m_txp << " dBm" << std::endl;
     std::cout << "Grid spacing: 120m (matching AODV test)" << std::endl;
-    std::cout << "Application start: Random 100-101s" << std::endl;
+    std::cout << "Application start: 20% of sim time (routing stabilization)" << std::endl;
     std::cout << "Simulation time: " << TotalTime << "s" << std::endl;
     std::cout << "==========================================\n" << std::endl;
 
@@ -226,10 +233,10 @@ ManetCompare1::Run()
     NodeContainer adhocNodes;
     adhocNodes.Create(nWifis);
 
-    // 🔋 Energy Source - DISABLED for now to test WiFi
-    // BasicEnergySourceHelper energyHelper;
-    // energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(500.0));
-    // auto energySources = energyHelper.Install(adhocNodes);
+    // 🔋 Energy Source - Simple energy tracking
+    BasicEnergySourceHelper energyHelper;
+    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(1000.0));  // 1000J per node
+    energy::EnergySourceContainer energySources = energyHelper.Install(adhocNodes);
 
     // 📶 Wi-Fi setup - MATCH AODV test configuration EXACTLY
     WifiHelper wifi;
@@ -240,6 +247,15 @@ ManetCompare1::Run()
     // ========== CRITICAL: Match AODV test exactly ==========
     wifiPhy.DisablePreambleDetectionModel();
     wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");  // AODV test uses YansErrorRateModel
+    
+    // TX Power: Use configurable parameter (NOTE: AODV test uses default TX power)
+    // Setting explicit TX power can affect reception - use with caution
+    // Default 802.11a TX power works well for 120m grid spacing
+    if (m_txp != 7.5)  // Only set if different from default
+    {
+        wifiPhy.Set("TxPowerStart", DoubleValue(m_txp));
+        wifiPhy.Set("TxPowerEnd", DoubleValue(m_txp));
+    }
     
     YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();  // Use Default() like AODV test
     Ptr<YansWifiChannel> chan = wifiChannel.Create();
@@ -252,6 +268,12 @@ ManetCompare1::Run()
                                  "DataMode", StringValue("OfdmRate6Mbps"),  // AODV test uses OfdmRate6Mbps
                                  "RtsCtsThreshold", StringValue("2200"));
     NetDeviceContainer adhocDevices = wifi.Install(wifiPhy, wifiMac, adhocNodes);
+
+    // 🔋 WiFi Radio Energy Model
+    WifiRadioEnergyModelHelper radioEnergyHelper;
+    radioEnergyHelper.Set("TxCurrentA", DoubleValue(0.017));  // TX current 17mA
+    radioEnergyHelper.Set("RxCurrentA", DoubleValue(0.0197)); // RX current 19.7mA
+    radioEnergyHelper.Install(adhocDevices, energySources);
 
     // Enable PCAP tracing on all nodes for debugging
     wifiPhy.EnablePcap("gaodv-test", adhocDevices);
@@ -272,6 +294,8 @@ ManetCompare1::Run()
                                       "GridWidth", UintegerValue(nWifis),
                                       "LayoutType", StringValue("RowFirst"));
     
+    // STATIC MOBILITY: Nodes do not move (ConstantPositionMobilityModel)
+    // Future GAODV versions may use dynamic mobility (RandomWalk2d, etc.)
     mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobilityAdhoc.Install(adhocNodes);
 
@@ -316,11 +340,7 @@ ManetCompare1::Run()
     else if (m_protocolName == "GAODV")
     {
         // GAODV: G-AODV flowchart with geometric routing and energy factors
-        // Enable comprehensive logging for debugging PDR issue
-        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_LEVEL_ALL);
-        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_TIME);
-        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_NODE);
-        LogComponentEnable("Gaodvv1RoutingProtocol", LOG_PREFIX_FUNC);
+        // Logging disabled for production runs (enable with NS_LOG environment variable if needed)
         
         gaodv.Set("Alpha", DoubleValue(0.6));
         gaodv.Set("Ethf", DoubleValue(0.2));
@@ -356,9 +376,10 @@ ManetCompare1::Run()
         AddressValue remoteAddress(InetSocketAddress(adhocInterfaces.GetAddress(i), port));
         onoff1.SetAttribute("Remote", remoteAddress);
         
-        // Stagger start times: random between 100-101s to allow routing to establish
-        // Use uniform random to avoid simultaneous starts
-        double startTime = 100.0 + m_uniformRandomVariable->GetValue(0.0, 1.0);
+        // Stagger start times: Start at 20% of total time to allow routing to establish
+        // Random spread of 1 second to avoid simultaneous starts
+        // This scales appropriately regardless of TotalTime
+        double startTime = (TotalTime * 0.20) + m_uniformRandomVariable->GetValue(0.0, 1.0);
         ApplicationContainer temp = onoff1.Install(adhocNodes.Get(i + m_nSinks));
         temp.Start(Seconds(startTime));
         temp.Stop(Seconds(TotalTime));
@@ -417,18 +438,18 @@ ManetCompare1::Run()
     std::cout << "Sink Received (unique): " << uniqueReceived << " pkts" << std::endl;
     std::cout << "PDR: " << (pdr * 100.0) << "%" << std::endl;
 
-    // Energy consumption - DISABLED
+    // Energy consumption calculation
     double totalInitialEnergy = 0.0, totalFinalEnergy = 0.0;
-    // for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
-    // {
-    //     totalInitialEnergy += initialEnergy[i];
-    //     
-    //     Ptr<ns3::energy::BasicEnergySource> es = energySources.Get(i)->GetObject<ns3::energy::BasicEnergySource>();
-    //     if (es)
-    //     {
-    //         totalFinalEnergy += es->GetRemainingEnergy();
-    //     }
-    // }
+    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    {
+        Ptr<energy::EnergySource> source = energySources.Get(i);
+        Ptr<energy::BasicEnergySource> basicSource = DynamicCast<energy::BasicEnergySource>(source);
+        if (basicSource)
+        {
+            totalInitialEnergy += basicSource->GetInitialEnergy();
+            totalFinalEnergy += basicSource->GetRemainingEnergy();
+        }
+    }
     double energyConsumed = totalInitialEnergy - totalFinalEnergy;
     
     std::cout << "\n--- Energy Consumption ---" << std::endl;

@@ -5,9 +5,9 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Status](https://img.shields.io/badge/GAODV-Working%20(99.7%25%20PDR)-brightgreen)
 
-Automated framework for comparing MANET routing protocols (AODV, OLSR, DSDV, DSR, GAODV) with comprehensive PDR and energy consumption analysis.
+Automated framework for comparing MANET routing protocols (**AODV**, **GAODV**, **DSR**, **OLSR**, **DSDV**) with comprehensive **PDR**, **throughput**, and **energy consumption** analysis.
 
-**✨ Latest Update:** GAODV-V1 now fully functional with 99.7% PDR using 802.11a WiFi configuration!
+**✨ Latest Update:** GAODV-V1 now fully functional with 99.7% PDR! DSR and AODV included for direct comparison. Real-time energy tracking enabled!
 
 ---
 
@@ -15,9 +15,10 @@ Automated framework for comparing MANET routing protocols (AODV, OLSR, DSDV, DSR
 
 ### 📊 Simulation Capabilities
 - **PDR Calculation** - Unique packet tracking with UID-based deduplication  
-- **Energy Monitoring** - Initial, consumed, and residual energy tracking
+- **Energy Monitoring** - WiFi radio energy model (TX/RX current-based tracking)
+- **Throughput Analysis** - Real-time kbps calculation
 - **CSV Export** - Structured data output for analysis
-- **Multi-Protocol Support** - AODV, OLSR, DSDV, DSR, GAODV
+- **Multi-Protocol Support** - **AODV**, **GAODV**, **DSR**, **OLSR**, **DSDV**
 - **802.11a WiFi** - Optimized configuration matching NS-3 AODV regression tests
 - **Flexible Topology** - Grid layout with configurable spacing (default 120m)
 
@@ -38,7 +39,77 @@ Automated framework for comparing MANET routing protocols (AODV, OLSR, DSDV, DSR
 
 ---
 
-## 🔧 Recent Fixes & Improvements
+## � GAODV Routing Decision Equations
+
+### Node Energy Factor (NEF)
+The normalized energy factor represents the remaining energy ratio of a node:
+
+$$
+\text{NEF} = \frac{E_{\text{residual}}}{E_{\text{initial}}}
+$$
+
+Where:
+- $E_{\text{residual}}$ = Current remaining energy (Joules)
+- $E_{\text{initial}}$ = Initial energy at simulation start (default: 1000 J)
+
+### Route Evaluation Function (REF)
+GAODV selects the optimal route by maximizing the Route Evaluation Function:
+
+$$
+\text{REF} = W_1 \cdot \text{RREQ}_{\text{EF}} + W_2 \cdot \frac{1}{d} + W_3 \cdot \frac{1}{h} + W_4 \cdot \frac{1}{\delta}
+$$
+
+Where:
+- $\text{RREQ}_{\text{EF}}$ = Energy factor from RREQ packet (minimum NEF along path)
+- $d$ = Euclidean distance from current node to destination
+- $h$ = Hop count from source to current node
+- $\delta$ = Propagation delay = $\frac{d}{v}$ where $v$ = propagation speed (default: 1500 m/s)
+- $W_1, W_2, W_3, W_4$ = Weighting factors (default: 0.25 each)
+
+### Energy Threshold Check
+Intermediate nodes forward RREQ only if their energy exceeds the threshold:
+
+$$
+\text{NEF}_{\text{node}} \geq \text{ETH}_{\text{F}} \times \alpha
+$$
+
+Where:
+- $\text{ETH}_{\text{F}}$ = Energy Threshold Factor (default: 0.2)
+- $\alpha$ = Alpha parameter (range: 0.4-0.8, default: 0.6)
+
+### RREQEF Update Rule
+During RREQ propagation, each intermediate node updates RREQEF if its energy is lower:
+
+$$
+\text{RREQ}_{\text{EF}}^{\text{new}} = \min(\text{RREQ}_{\text{EF}}^{\text{old}}, \text{NEF}_{\text{node}})
+$$
+
+This ensures RREQEF reflects the minimum energy along the path (bottleneck node).
+
+### GAODV Route Selection Algorithm
+
+**At Destination Node:**
+1. Collect all RREQ packets during evaluation window (default: 1-2 seconds)
+2. For each RREQ, calculate REF using the formula above
+3. Select the route with **maximum REF value**
+4. Send RREP back along the selected path
+
+**Key Differences from AODV:**
+- **AODV**: Selects first arriving RREQ (minimum hop count)
+- **GAODV**: Waits and selects best REF (energy-aware, distance-aware, delay-aware)
+
+**Configurable Parameters:**
+- `Alpha` (α): Threshold factor (0.4-0.8, default: 0.6)
+- `Ethf`: Energy threshold factor (default: 0.2)
+- `W1, W2, W3, W4`: REF weights (default: 0.25 each)
+- `EvaluationWindow`: RREQ collection time (default: 1-2s)
+- `MaxRange`: Maximum communication range (default: 250m)
+- `InitialEnergy`: Initial node energy (default: 1000 J)
+- `PropagationSpeed`: Signal speed (default: 1500 m/s for underwater)
+
+---
+
+## �🔧 Recent Fixes & Improvements
 
 ### Critical GAODV-V1 Fixes (January 2026)
 ✅ **802.11a WiFi Configuration** - Changed from 802.11b to 802.11a with OfdmRate6Mbps  
