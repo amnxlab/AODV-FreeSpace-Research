@@ -236,7 +236,7 @@ ManetCompare1::Run()
     // 🔋 Energy Source - Simple energy tracking
     BasicEnergySourceHelper energyHelper;
     energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(1000.0));  // 1000J per node
-    EnergySourceContainer energySources = energyHelper.Install(adhocNodes);
+    energy::EnergySourceContainer energySources = energyHelper.Install(adhocNodes);
 
     // 📶 Wi-Fi setup - MATCH AODV test configuration EXACTLY
     WifiHelper wifi;
@@ -442,8 +442,8 @@ ManetCompare1::Run()
     double totalInitialEnergy = 0.0, totalFinalEnergy = 0.0;
     for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
     {
-        Ptr<EnergySource> source = energySources.Get(i);
-        Ptr<BasicEnergySource> basicSource = DynamicCast<BasicEnergySource>(source);
+        Ptr<energy::EnergySource> source = energySources.Get(i);
+        Ptr<energy::BasicEnergySource> basicSource = DynamicCast<energy::BasicEnergySource>(source);
         if (basicSource)
         {
             totalInitialEnergy += basicSource->GetInitialEnergy();

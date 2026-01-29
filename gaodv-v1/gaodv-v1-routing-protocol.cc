@@ -315,7 +315,7 @@ RoutingProtocol::SetIpv4(Ptr<Ipv4> ipv4)
 double
 RoutingProtocol::ComputeNef() const
 {
-    Ptr<EnergySource> energySrc = m_node->GetObject<EnergySource>();
+    Ptr<energy::EnergySource> energySrc = m_node->GetObject<energy::EnergySource>();
     if (energySrc)
     {
         double residual = energySrc->GetRemainingEnergy();
@@ -1052,7 +1052,7 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         NS_LOG_UNCOND("RecvRequest: Buffered RREQ count = " << m_bufferedRreqs.size());
         
         // Start Timer T if this is first RREQ for this request
-        if (!m_evaluationTimer.IsRunning())
+        if (!m_evaluationTimer.IsPending())
         {
             m_evaluationTimer = Simulator::Schedule(m_evaluationWindow,
                                                     &RoutingProtocol::EvaluateAndSendRrep,
