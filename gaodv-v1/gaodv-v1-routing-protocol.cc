@@ -27,6 +27,20 @@
 #include <algorithm>
 #include <cmath>
 
+// NS-3 version compatibility: In NS-3 3.42+, energy classes are in ns3::energy namespace
+// In older versions, they are directly in ns3 namespace
+// We use 'using namespace' to bring them into scope for both cases
+namespace ns3 {
+namespace energy {} // Forward declare the energy namespace (may be empty in old NS-3)
+}
+using namespace ns3::energy;
+
+// Timer compatibility helper: Use !IsExpired() which works in all NS-3 versions
+// NS-3 3.42+ deprecated IsRunning() in favor of IsPending(), but !IsExpired() works everywhere
+inline bool IsTimerActive(const ns3::EventId& timer) {
+    return !timer.IsExpired();
+}
+
 namespace ns3 {
 namespace gaodvv1 {
 
@@ -315,7 +329,7 @@ RoutingProtocol::SetIpv4(Ptr<Ipv4> ipv4)
 double
 RoutingProtocol::ComputeNef() const
 {
-    Ptr<energy::EnergySource> energySrc = m_node->GetObject<energy::EnergySource>();
+    Ptr<EnergySource> energySrc = m_node->GetObject<EnergySource>();
     if (energySrc)
     {
         double residual = energySrc->GetRemainingEnergy();
@@ -1052,7 +1066,7 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         NS_LOG_UNCOND("RecvRequest: Buffered RREQ count = " << m_bufferedRreqs.size());
         
         // Start Timer T if this is first RREQ for this request
-        if (!m_evaluationTimer.IsPending())
+        if (!IsTimerActive(m_evaluationTimer))
         {
             m_evaluationTimer = Simulator::Schedule(m_evaluationWindow,
                                                     &RoutingProtocol::EvaluateAndSendRrep,
