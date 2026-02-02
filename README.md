@@ -14,68 +14,153 @@ Implementation of **GAODV (Geometric and Energy-Aware AODV)** based on the **EDA
 ## 📋 Table of Contents
 
 1. [Quick Start](#-quick-start)
-2. [Simulation Parameters (EDA-AODV Paper)](#-eda-aodv-paper-parameters)
-3. [GAODV Algorithm & Equations](#-gaodv-algorithm--equations)
-4. [Python Automation Tool](#-python-automation-tool)
-5. [Project Structure](#-project-structure)
-6. [Troubleshooting](#-troubleshooting)
-7. [Version History](#-version-history)
+2. [Test Scenarios](#-test-scenarios)
+3. [CLI Reference](#-cli-reference)
+4. [EDA-AODV Parameters](#-eda-aodv-paper-parameters)
+5. [GAODV Algorithm](#-gaodv-algorithm--equations)
+6. [Project Structure](#-project-structure)
+7. [Troubleshooting](#-troubleshooting)
 
 ---
 
 ## 🚀 Quick Start
 
-### Step 1: Install Prerequisites
+### 1. Setup
 
 ```bash
-# Python dependencies
+# Install Python dependencies
 pip3 install -r requirements.txt
 
-# Ensure NS-3 3.42 is installed
-```
-
-### Step 2: Copy Files to NS-3
-
-```bash
-# Copy GAODV module
+# Copy files to NS-3
 cp -r gaodv-v1/ /path/to/ns-3.42/src/gaodv-v1/
-
-# Copy simulation file
 cp src/manet-compare-freespace-v1.cc /path/to/ns-3.42/scratch/
 
 # Build NS-3
 cd /path/to/ns-3.42 && ./ns3 build
 ```
 
-### Step 3: Run Simulation
+### 2. Run Your First Simulation
 
-#### Option A: Direct NS-3 Command
+```bash
+# Simple test with GAODV (paper defaults)
+python3 scripts/run_all.py --protocols GAODV --runs 1
+```
+
+---
+
+## 🧪 Test Scenarios
+
+### Scenario 1: Basic Protocol Comparison
+Compare GAODV with standard AODV using paper defaults:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV --runs 10
+```
+
+### Scenario 2: Network Scalability
+Test how protocols perform as network size increases:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV --nodes 25 50 100 --runs 5
+```
+
+### Scenario 3: Large Network (500 nodes)
+Stress test with large network:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV --nodes 500 --runs 3
+```
+
+### Scenario 4: Energy Efficiency Comparison
+Compare energy consumption across all routing protocols:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV DSR OLSR DSDV --runs 10
+```
+
+### Scenario 5: Low Energy Conditions
+Test protocol behavior with limited initial energy:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV --initial-energy 10 --runs 5
+```
+
+### Scenario 6: High Traffic Load
+Test with higher packet rate and larger packets:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV \
+    --packet-rate 8 \
+    --packet-size 1024 \
+    --runs 5
+```
+
+### Scenario 7: Long Duration Simulation
+Extended simulation to observe energy depletion:
+```bash
+python3 scripts/run_all.py --protocols GAODV AODV \
+    --simtime 1000 \
+    --initial-energy 15 \
+    --runs 3
+```
+
+### Scenario 8: Complete Benchmark Suite
+Full comparison for research paper:
+```bash
+python3 scripts/run_all.py \
+    --protocols GAODV AODV DSR OLSR DSDV \
+    --nodes 25 50 100 \
+    --runs 10
+
+# Generate visualization
+python3 scripts/plot_results.py
+```
+
+---
+
+## 📖 CLI Reference
+
+### Basic Syntax
+```bash
+python3 scripts/run_all.py [OPTIONS]
+```
+
+### Network Parameters
+
+| Option | Example | Description |
+|--------|---------|-------------|
+| `--protocols` | `--protocols GAODV AODV` | Protocols to test |
+| `--nodes` | `--nodes 50` or `--nodes 25 50 100` | Number of nodes |
+| `--sinks` | `--sinks 10` | Number of sink/receiver nodes |
+| `--runs` | `--runs 10` | Runs per configuration |
+
+### Simulation Parameters (EDA-AODV Paper)
+
+| Option | Default | Example |
+|--------|---------|---------|
+| `--simtime` | 500 | `--simtime 300` |
+| `--initial-energy` | 20 | `--initial-energy 15` |
+| `--packet-size` | 512 | `--packet-size 1024` |
+| `--packet-rate` | 4 | `--packet-rate 8` |
+| `--txpower` | 7.5 | `--txpower 10.0` |
+
+### System Options
+
+| Option | Description |
+|--------|-------------|
+| `--ns3-path PATH` | Specify NS-3 installation path |
+| `--skip-build` | Skip NS-3 rebuild (faster) |
+| `--no-aggregate` | Don't combine result files |
+
+### Direct NS-3 Commands
+
+For single runs or debugging:
 ```bash
 cd /path/to/ns-3.42
 
-# Default EDA-AODV paper parameters
+# Default parameters
 ./ns3 run "scratch/manet-compare-freespace-v1 --protocol=GAODV"
 
 # Custom parameters
 ./ns3 run "scratch/manet-compare-freespace-v1 \
     --protocol=GAODV \
-    --nWifis=50 \
+    --nWifis=100 \
     --totalTime=500 \
-    --initialEnergy=20 \
-    --packetSize=512"
-```
-
-#### Option B: Python Automation (Recommended)
-```bash
-# Single protocol test
-python3 scripts/run_all.py --protocols GAODV --runs 5
-
-# Compare GAODV vs AODV with paper parameters
-python3 scripts/run_all.py --protocols GAODV AODV \
-    --simtime 500 \
-    --initial-energy 20 \
-    --packet-size 512 \
-    --packet-rate 4
+    --initialEnergy=20"
 ```
 
 ---
@@ -86,164 +171,44 @@ Based on **Table 1** from the EDA-AODV paper:
 
 | Parameter | Value | CLI Option |
 |-----------|-------|------------|
-| **Number of Nodes** | 50 | `--nWifis=50` |
-| **Simulation Time** | 500 seconds | `--totalTime=500` |
-| **Simulation Area** | 400m × 800m | (hardcoded) |
-| **Initial Energy** | **20 Joules** | `--initialEnergy=20` |
-| **Packet Size** | **512 bytes** | `--packetSize=512` |
-| **Packet Rate** | **4 packets/second** | `--packetRate=4` |
-| **Energy Threshold** | **10%** of initial | (code: Ethf=0.1) |
-| **MAC Layer** | 802.11a | OfdmRate6Mbps |
-| **Transmission Range** | 250m | (code) |
-| **Propagation Model** | Two-Ray Ground | (code) |
+| Number of Nodes | 50 | `--nodes 50` |
+| Simulation Time | 500s | `--simtime 500` |
+| Initial Energy | **20 J** | `--initial-energy 20` |
+| Packet Size | **512 B** | `--packet-size 512` |
+| Packet Rate | **4 pkt/s** | `--packet-rate 4` |
+| Energy Threshold | **10%** | (code: Ethf=0.1) |
+| MAC Layer | 802.11a | (hardcoded) |
+| TX Range | 250m | (hardcoded) |
 
 ---
 
 ## 📊 GAODV Algorithm & Equations
 
-GAODV implements the **EDA-AODV** (Energy and Distance Aware AODV) routing protocol.
-
 ### Node Energy Factor (NEF)
-
-Each node calculates its energy factor as the ratio of remaining to initial energy:
-
 $$
 \text{NEF} = \frac{E_{\text{residual}}}{E_{\text{initial}}}
 $$
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| $E_{\text{residual}}$ | Current remaining energy | - |
-| $E_{\text{initial}}$ | Initial energy at start | **20 J** |
-
 ### Route Selection: Max-Min Energy
 
-GAODV uses **max-min energy selection** at the destination:
-
-**Step 1 - RREQ Propagation:**
-Each intermediate node updates RqEF to carry the minimum energy along the path:
-
+**RREQ Propagation** (each node updates minimum):
 $$
 \text{RqEF}^{\text{new}} = \min(\text{RqEF}^{\text{current}}, \text{NEF}_{\text{node}})
 $$
 
-**Step 2 - Destination Selection:**
-After waiting time T, the destination selects the path with the **highest RqEF**:
-
+**Destination Selection** (picks highest RqEF):
 $$
 \text{Best Path} = \arg\max(\text{RqEF})
 $$
 
-> **Why Max-Min?** This selects the path where the weakest node (bottleneck) has the most energy, maximizing route lifetime.
+> This selects the path where the weakest node has the most energy, maximizing route lifetime.
 
-### Energy Threshold Check
-
-Nodes only forward RREQ if their energy exceeds the threshold:
-
+### Energy Threshold
 $$
 \text{NEF}_{\text{node}} \geq \text{ETH}_F \times \alpha
 $$
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| $\text{ETH}_F$ | **0.1** (10%) | Energy threshold factor |
-| $\alpha$ | **0.6** | Threshold multiplier |
-
-### Distance Calculation (3D)
-
-Distance between nodes includes all three axes:
-
-$$
-d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2 + (z_2 - z_1)^2}
-$$
-
----
-
-## 🐍 Python Automation Tool
-
-The `run_all.py` script automates simulation runs with parameter control.
-
-### Full CLI Reference
-
-```bash
-python3 scripts/run_all.py [OPTIONS]
-```
-
-#### Protocol & Network Parameters
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--protocols` | `GAODV` | Protocols: GAODV, AODV, DSR, OLSR, DSDV |
-| `--nodes` | `50` | Number of nodes (supports multiple: `25 50 100`) |
-| `--txpower` | `7.5` | TX power in dBm |
-| `--runs` | `5` | Number of runs per configuration |
-
-#### EDA-AODV Paper Parameters
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--simtime` | **500** | Simulation time (seconds) |
-| `--sinks` | **10** | Number of sink nodes |
-| `--initial-energy` | **20** | Initial energy per node (Joules) |
-| `--packet-size` | **512** | Packet size (bytes) |
-| `--packet-rate` | **4** | Packets per second |
-
-#### System Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--ns3-path` | Auto-detect | Path to NS-3 installation |
-| `--skip-build` | False | Skip NS-3 rebuild |
-| `--no-aggregate` | False | Skip result aggregation |
-
-### Usage Examples
-
-#### Example 1: Basic Test with Paper Defaults
-```bash
-python3 scripts/run_all.py --protocols GAODV --runs 5
-```
-Uses all EDA-AODV paper defaults automatically.
-
-#### Example 2: GAODV vs AODV Comparison
-```bash
-python3 scripts/run_all.py --protocols GAODV AODV --runs 10
-```
-
-#### Example 3: Custom Energy Settings
-```bash
-python3 scripts/run_all.py --protocols GAODV \
-    --initial-energy 15 \
-    --simtime 300 \
-    --runs 5
-```
-
-#### Example 4: Multi-Node Scalability Test
-```bash
-python3 scripts/run_all.py --protocols GAODV AODV \
-    --nodes 25 50 100 \
-    --runs 10
-```
-
-#### Example 5: Full Parameter Sweep
-```bash
-python3 scripts/run_all.py \
-    --protocols GAODV AODV DSR \
-    --nodes 25 50 100 \
-    --txpower 5.0 7.5 10.0 \
-    --initial-energy 20 \
-    --runs 10
-```
-
-### Generate Visualizations
-
-```bash
-python3 scripts/plot_results.py
-```
-
-Produces:
-- `graphs/pdr_comparison.png` - PDR by protocol and nodes
-- `graphs/energy_comparison.png` - Energy consumption
-- `graphs/pdr_energy_tradeoff.png` - Trade-off analysis
+Where: ETH_F = 0.1 (10%), α = 0.6
 
 ---
 
@@ -252,78 +217,42 @@ Produces:
 ```
 AODV-FreeSpace-Research/
 ├── src/
-│   └── manet-compare-freespace-v1.cc    # NS-3 simulation (main)
+│   └── manet-compare-freespace-v1.cc    # NS-3 simulation
 ├── scripts/
-│   ├── run_all.py                        # Python automation tool
-│   └── plot_results.py                   # Visualization generator
-├── gaodv-v1/                             # GAODV-V1 Protocol Module
-│   ├── gaodv-v1-routing-protocol.cc/h    # Main routing logic
-│   ├── gaodv-v1-packet.cc/h              # RREQ/RREP with (x,y,z) & RqEF
-│   ├── gaodv-v1-rtable.cc/h              # Routing table
-│   ├── gaodv-v1-rqueue.cc/h              # Packet queue
-│   └── ...                               # Helper modules
+│   ├── run_all.py                        # Automation tool
+│   └── plot_results.py                   # Visualization
+├── gaodv-v1/                             # GAODV protocol module
 ├── results/                              # Output CSVs
 ├── graphs/                               # Generated plots
-├── requirements.txt                      # Python dependencies
-└── README.md                             # This file
+└── README.md
 ```
 
 ---
 
 ## 🔧 Troubleshooting
 
-### NS-3 Not Found
-```bash
-# Specify path manually
-python3 scripts/run_all.py --ns3-path /home/user/ns-3.42 --protocols GAODV
-```
-
-### Build Errors
-```bash
-# Clean rebuild
-cd /path/to/ns-3.42
-./ns3 clean
-./ns3 configure --enable-examples
-./ns3 build
-```
-
-### Zero PDR
-Common causes:
-1. **Wrong WiFi standard** - Must use 802.11a with OfdmRate6Mbps
-2. **Apps start too early** - Routes need time to establish (100s default)
-3. **Short simulation** - Use at least 500s for meaningful results
-
-### Missing Python Modules
-```bash
-pip3 install -r requirements.txt
-```
+| Problem | Solution |
+|---------|----------|
+| NS-3 not found | `--ns3-path /path/to/ns-3.42` |
+| Build errors | `cd ns-3.42 && ./ns3 clean && ./ns3 build` |
+| Zero PDR | Ensure 802.11a is used, simtime ≥ 500s |
+| Missing modules | `pip3 install -r requirements.txt` |
 
 ---
 
 ## 📝 Version History
 
 ### v0.2 (February 2026)
-- ✅ **Route Selection Fixed**: Changed from complex REF formula to **max RqEF** (EDA-AODV paper)
-- ✅ **Python Parameters**: Added CLI options for all EDA-AODV paper values
-- ✅ **Propagation Speed**: Fixed from 1500 m/s to **3×10⁸ m/s** (radio free-space)
-- ✅ **Energy Threshold**: Updated to **10%** (was 20%)
-- ✅ **Documentation**: Complete README overhaul
+- ✅ Route selection: max RqEF (EDA-AODV paper)
+- ✅ Python CLI with all paper parameters
+- ✅ Propagation speed: 3×10⁸ m/s (radio)
+- ✅ Documentation overhaul
 
 ### v0.1 (January 2026)
 - Initial GAODV-V1 implementation
-- 802.11a WiFi configuration
-- Basic Python automation
-
----
-
-## 📚 References
-
-1. **EDA-AODV Paper**: "EDA-AODV: Energy and Distance Aware AODV Routing Protocol"
-2. **NS-3 Documentation**: https://www.nsnam.org/docs/
-3. **AODV RFC 3561**: https://tools.ietf.org/html/rfc3561
 
 ---
 
 ## 📄 License
 
-MIT License - See LICENSE file for details.
+MIT License
