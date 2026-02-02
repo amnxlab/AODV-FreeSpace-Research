@@ -74,31 +74,39 @@ python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --simtime 500 --run
 python3 scripts/run_all.py --protocols GAODV AODV OLSR DSDV DSR --nodes 50 --runs 3
 ```
 
-#### Test 4: Network Scalability
+#### Test 4: TX Range Testing
+```bash
+# Test different transmission ranges (100m, 150m, 200m)
+python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 100
+python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 150
+python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 200
+```
+
+#### Test 5: Network Scalability
 ```bash
 # Test scalability: 25, 50, 100 nodes
 python3 scripts/run_all.py --protocols GAODV AODV --nodes 25 50 100 --runs 5
 ```
 
-#### Test 5: High Traffic Load
+#### Test 6: High Traffic Load
 ```bash
 # 8 packets/second with 1024B packets
 python3 scripts/run_all.py --protocols GAODV AODV --packet-rate 8 --packet-size 1024 --runs 5
 ```
 
-#### Test 6: Extended Duration
+#### Test 7: Extended Duration
 ```bash
 # 1000 second simulation for energy depletion analysis
 python3 scripts/run_all.py --protocols GAODV AODV --simtime 1000 --runs 3
 ```
 
-#### Test 7: TX Power Variation
+#### Test 8: TX Power Variation
 ```bash
-# Test different transmission power levels
+# Test different transmission power levels (deprecated - use --txrange instead)
 python3 scripts/run_all.py --protocols GAODV AODV --txpower 5.0 7.5 10.0 --runs 3
 ```
 
-#### Test 8: Full Benchmark Suite
+#### Test 9: Full Benchmark Suite
 ```bash
 # Complete benchmark for research paper
 python3 scripts/run_all.py \
@@ -129,7 +137,7 @@ cd /path/to/ns-3.42
     --nWifis=50 \
     --nSinks=10 \
     --totalTime=500 \
-    --txpower=7.5 \
+    --txRange=100 \
     --packetRate=4 \
     --packetSize=512"
 
@@ -197,6 +205,13 @@ python3 scripts/run_all.py [OPTIONS]
 | `--packet-rate` | 4 | `--packet-rate 8` |
 | `--txpower` | 7.5 | `--txpower 10.0` |
 
+### RF/Wireless Parameters
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--txRange` | 100 | Transmission range in meters |
+| `--txpower` | 7.5 | Transmission power in dBm (if not using txRange) |
+
 ### System Options
 
 | Option | Description |
@@ -221,7 +236,7 @@ Based on **Table 1** from the EDA-AODV paper:
 | Energy Threshold (ETHF) | **10%** | (code: Ethf=0.1) |
 | Alpha (α) | **0.6** | (code: Alpha=0.6) |
 | MAC Layer | 802.11a | (hardcoded) |
-| TX Range | 250m | (hardcoded) |
+| TX Range | **100 m** | `--txRange 100` |
 
 ---
 

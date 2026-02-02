@@ -107,6 +107,7 @@ private:
     double m_totalTime{500.0};  // Simulation duration in seconds - default 500s
     std::string m_protocolName{"GAODV"};
     double m_txp{7.5};
+    double m_txRange{100.0};  // Transmission range in meters - default 100m
     bool m_traceMobility{false};
     bool m_flowMonitor{false};
     
@@ -221,6 +222,7 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("nSinks", "Number of sink nodes", m_nSinks);
     cmd.AddValue("totalTime", "Simulation time in seconds", m_totalTime);
     cmd.AddValue("txpower", "Transmission power in dBm", m_txp);
+    cmd.AddValue("txRange", "Transmission range in meters", m_txRange);
     // EDA-AODV Paper Parameters
     cmd.AddValue("areaWidth", "Simulation area width in meters", m_areaWidth);
     cmd.AddValue("areaHeight", "Simulation area height in meters", m_areaHeight);
@@ -279,8 +281,9 @@ ManetCompare1::Run()
     std::cout << "Protocol: " << m_protocolName << std::endl;
     std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
     std::cout << "Mobility: STATIC (grid layout, 120m spacing)" << std::endl;
-    std::cout << "WiFi: 802.11a, OfdmRate6Mbps, Two-Ray Ground" << std::endl;
-    std::cout << "TX Power: " << m_txp << " dBm, Range: 250m" << std::endl;
+    std::cout << "WiFi: 802.11a, OfdmRate6Mbps" << std::endl;
+    std::cout << "TX Range: " << m_txRange << " m" << std::endl;
+    std::cout << "TX Power: " << m_txp << " dBm" << std::endl;
     std::cout << "Initial Energy: " << m_initialEnergyJ << " J per node" << std::endl;
     std::cout << "Traffic: CBR " << m_packetRate << " pkt/s, " << m_packetSize << "B packets (" << dataRateBps << " bps)" << std::endl;
     std::cout << "Simulation time: " << TotalTime << "s" << std::endl;
@@ -315,8 +318,11 @@ ManetCompare1::Run()
     wifiPhy.DisablePreambleDetectionModel();  // CRITICAL: Must be before SetChannel
     wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
     
-    // Use Default channel like the working test (not custom Two-Ray Ground)
-    YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
+    // Configure propagation model with desired transmission range
+    YansWifiChannelHelper wifiChannel;
+    wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
+    wifiChannel.AddPropagationLoss("ns3::RangePropagationLossModel",
+                                   "MaxRange", DoubleValue(m_txRange));
     Ptr<YansWifiChannel> chan = wifiChannel.Create();
     wifiPhy.SetChannel(chan);
     

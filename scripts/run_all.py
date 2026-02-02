@@ -256,6 +256,8 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         ns3_args += f" --packetSize={sim_args['packet_size']}"
     if sim_args.get('packet_rate'):
         ns3_args += f" --packetRate={sim_args['packet_rate']}"
+    if sim_args.get('txrange'):
+        ns3_args += f" --txRange={sim_args['txrange']}"
     
     # Determine run command - use string for shell=True
     if (ns3_path / "ns3").exists():
@@ -352,6 +354,7 @@ def run_experiments(args):
         'initial_energy': args.initial_energy,
         'packet_size': args.packet_size,
         'packet_rate': args.packet_rate,
+        'txrange': args.txrange[0] if args.txrange else 100.0,  # Use first txrange value
     }
     
     for i, (protocol, nodes, txpower, run) in enumerate(experiments, 1):
@@ -437,6 +440,8 @@ Examples:
                         help='Number of nodes to test (default: 50 per EDA-AODV paper)')
     parser.add_argument('--txpower', nargs='+', type=float, default=[7.5],
                         help='Transmission power values (dBm)')
+    parser.add_argument('--txrange', nargs='+', type=float, default=[100.0],
+                        help='Transmission range in meters (default: 100)')
     parser.add_argument('--runs', type=int, default=5,
                         help='Number of runs per configuration')
     
@@ -481,6 +486,7 @@ Examples:
     print(f"  Source File: {args.source_file}")
     print(f"  Protocols: {args.protocols}")
     print(f"  Nodes: {args.nodes}")
+    print(f"  TX Range: {args.txrange[0] if args.txrange else 100.0}m")
     print(f"  TX Power: {args.txpower}")
     print(f"  Runs: {args.runs}")
     print(f"  Simulation Time: {args.simtime}s")
