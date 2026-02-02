@@ -57,10 +57,10 @@ RoutingProtocol::GetTypeId()
             .AddConstructor<RoutingProtocol>()
             // G-AODV specific attributes
             .AddAttribute("Alpha",
-                          "Threshold factor (0.4-0.8)",
+                          "Threshold factor (0.5-0.7)",
                           DoubleValue(0.6),
                           MakeDoubleAccessor(&RoutingProtocol::m_alpha),
-                          MakeDoubleChecker<double>(0.4, 0.8))
+                          MakeDoubleChecker<double>(0.5, 0.7))
             .AddAttribute("Ethf",
                           "Energy Threshold Factor",
                           DoubleValue(0.2),
@@ -375,9 +375,9 @@ RoutingProtocol::GetPosition() const
 double
 RoutingProtocol::CalculateDistance(const Vector& a, const Vector& b)
 {
+    // 2D distance only (ignore Z axis for ground-based MANETs)
     return std::sqrt((a.x - b.x) * (a.x - b.x) +
-                     (a.y - b.y) * (a.y - b.y) +
-                     (a.z - b.z) * (a.z - b.z));
+                     (a.y - b.y) * (a.y - b.y));
 }
 
 bool
@@ -460,10 +460,6 @@ RoutingProtocol::RouteOutput(Ptr<Packet> p,
         if (iface >= 0)
         {
             NS_LOG_DEBUG("Valid route found to " << dst);
-            NS_LOG_UNCOND("RouteOutput: Node " << m_node->GetId() 
-                          << " sending packet UID=" << p->GetUid() 
-                          << " to " << dst 
-                          << " via " << route->GetGateway());
             sockerr = Socket::ERROR_NOTERROR;
             return route;
         }
@@ -477,9 +473,6 @@ RoutingProtocol::RouteOutput(Ptr<Packet> p,
     
     // No route - initiate route discovery
     NS_LOG_DEBUG("No route to " << dst << ", initiating route discovery");
-    NS_LOG_UNCOND("RouteOutput: Node " << m_node->GetId() 
-                  << " NO ROUTE to " << dst 
-                  << " - initiating RREQ discovery");
     sockerr = Socket::ERROR_NOROUTETOHOST;
     
     // Start route discovery if not already in progress
@@ -528,10 +521,6 @@ RoutingProtocol::RouteInput(Ptr<const Packet> p,
             if (address.GetLocal() == dst)
             {
                 NS_LOG_DEBUG("Local delivery to " << dst);
-                NS_LOG_UNCOND("RouteInput: Node " << m_node->GetId() 
-                              << " RECEIVED packet UID=" << p->GetUid() 
-                              << " from " << src 
-                              << " (LOCAL DELIVERY)");
                 m_receivedUids.insert(p->GetUid());
                 lcb(p, header, iface);
                 return true;
@@ -582,10 +571,6 @@ RoutingProtocol::Forwarding(Ptr<const Packet> p,
         else
         {
             NS_LOG_DEBUG("Forwarding to " << dst << " via " << route->GetGateway());
-            NS_LOG_UNCOND("Forwarding: Node " << m_node->GetId() 
-                          << " forwarding packet UID=" << p->GetUid() 
-                          << " to " << dst 
-                          << " via " << route->GetGateway());
             
             UpdateRouteLifeTime(dst, m_activeRouteTimeout);
             UpdateRouteLifeTime(route->GetGateway(), m_activeRouteTimeout);
@@ -597,25 +582,15 @@ RoutingProtocol::Forwarding(Ptr<const Packet> p,
     }
     
     NS_LOG_DEBUG("No route to " << dst << ", queuing packet");
-    NS_LOG_UNCOND("Forwarding: Node " << m_node->GetId() 
-                  << " NO ROUTE to " << dst 
-                  << " - queuing packet UID=" << p->GetUid());
     
     // Queue packet and initiate route discovery
     QueueEntry qe(p, header, ucb, ecb);
     if (m_queue.Enqueue(qe))
     {
-        NS_LOG_UNCOND("Forwarding: Packet UID=" << p->GetUid() 
-                      << " queued successfully for " << dst);
         if (!m_routingTable.LookupRoute(dst, rt) || rt.GetFlag() != IN_SEARCH)
         {
             SendRequest(dst);
         }
-    }
-    else
-    {
-        NS_LOG_UNCOND("Forwarding: QUEUE FULL - packet UID=" << p->GetUid() 
-                      << " DROPPED for " << dst);
     }
     
     return true;
@@ -659,29 +634,21 @@ void
 RoutingProtocol::NotifyInterfaceUp(uint32_t i)
 {
     NS_LOG_FUNCTION(this << i);
-    NS_LOG_UNCOND("NotifyInterfaceUp: Node " << (m_node ? m_node->GetId() : -1)
-                  << " interface " << i << " coming up");
     
     Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol>();
     
     if (l3->GetNAddresses(i) <= 0)
     {
-        NS_LOG_UNCOND("NotifyInterfaceUp: No addresses on interface " << i);
         return;
     }
     
     Ipv4InterfaceAddress iface = l3->GetAddress(i, 0);
-    NS_LOG_UNCOND("NotifyInterfaceUp: Interface address = " << iface.GetLocal());
     
     if (iface.GetLocal() == Ipv4Address("127.0.0.1"))
     {
         m_lo = l3->GetNetDevice(i);
-        NS_LOG_UNCOND("NotifyInterfaceUp: Loopback interface detected");
         return;
     }
-    
-    NS_LOG_UNCOND("NotifyInterfaceUp: Creating sockets, m_node=" << m_node 
-                  << " nodeId=" << (m_node ? m_node->GetId() : -1));
     
     // Create socket bound to interface's local address (like AODV does)
     Ptr<Socket> socket = Socket::CreateSocket(m_node, UdpSocketFactory::GetTypeId());
@@ -692,7 +659,6 @@ RoutingProtocol::NotifyInterfaceUp(uint32_t i)
     socket->SetAllowBroadcast(true);
     socket->SetIpRecvTtl(true);
     m_socketAddresses.insert(std::make_pair(socket, iface));
-    NS_LOG_UNCOND("NotifyInterfaceUp: Created socket bound to " << iface.GetLocal() << ":" << GAODVV1_PORT);
     
     // Create subnet broadcast socket (CRITICAL for receiving broadcasts)
     // Bind to subnet broadcast address like AODV does
@@ -704,7 +670,6 @@ RoutingProtocol::NotifyInterfaceUp(uint32_t i)
     socket->SetAllowBroadcast(true);
     socket->SetIpRecvTtl(true);
     m_socketSubnetBroadcastAddresses.insert(std::make_pair(socket, iface));
-    NS_LOG_UNCOND("NotifyInterfaceUp: Created broadcast socket bound to " << iface.GetBroadcast() << ":" << GAODVV1_PORT);
     
     // Add broadcast route
     Ptr<NetDevice> dev = m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(iface.GetLocal()));
@@ -825,10 +790,6 @@ RoutingProtocol::SendPacketFromQueue(Ipv4Address dst, Ptr<Ipv4Route> route)
     QueueEntry qe;
     while (m_queue.Dequeue(dst, qe))
     {
-        NS_LOG_UNCOND("SendPacketFromQueue: Node " << m_node->GetId() 
-                      << " sending queued packet UID=" << qe.GetPacket()->GetUid() 
-                      << " to " << dst 
-                      << " via " << route->GetGateway());
         m_packetsSent++;
         qe.GetUnicastForwardCallback()(route, qe.GetPacket(), qe.GetIpv4Header());
     }
@@ -873,8 +834,6 @@ void
 RoutingProtocol::SendRequest(Ipv4Address dst)
 {
     NS_LOG_FUNCTION(this << dst);
-    NS_LOG_UNCOND("SendRequest: Node " << m_node->GetId() 
-                  << " initiating RREQ for destination " << dst);
     
     // Rate limiting
     if (m_rreqCount >= m_rreqRateLimit)
@@ -935,10 +894,7 @@ RoutingProtocol::SendRequest(Ipv4Address dst)
     
     NS_LOG_INFO("GAODV-V1 Node " << m_node->GetId() << " sending RREQ to " << dst
                 << " pos=(" << rreq.GetPosition().x << "," << rreq.GetPosition().y
-                << "," << rreq.GetPosition().z << ") RREQEF=" << rreq.GetRreqEf());
-    
-    NS_LOG_UNCOND("SendRequest: Broadcasting RREQ packet size=" << packet->GetSize() 
-                  << " bytes on " << m_socketAddresses.size() << " sockets");
+                << ") RREQEF=" << rreq.GetRreqEf());
     
     for (const auto& entry : m_socketAddresses)
     {
@@ -958,10 +914,7 @@ RoutingProtocol::SendRequest(Ipv4Address dst)
             destination = iface.GetBroadcast();  // Use 10.1.1.255 like AODV!
         }
         
-        NS_LOG_UNCOND("  Broadcasting RREQ on interface " << iface.GetLocal() 
-                      << " to " << destination);
-        int sent = socket->SendTo(p, 0, InetSocketAddress(destination, GAODVV1_PORT));
-        NS_LOG_UNCOND("    SendTo returned: " << sent << " (packet size=" << p->GetSize() << ")");
+        socket->SendTo(p, 0, InetSocketAddress(destination, GAODVV1_PORT));
     }
     
     // Schedule retry
@@ -1049,9 +1002,6 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
     if (IsMyOwnAddress(rreq.GetDst()))
     {
         NS_LOG_INFO("I am destination. Buffering RREQ from " << rreq.GetOrigin());
-        NS_LOG_UNCOND("RecvRequest: Node " << m_node->GetId() 
-                      << " is DESTINATION - buffering RREQ from origin " << rreq.GetOrigin() 
-                      << " (RREQ ID=" << rreq.GetId() << ")");
         
         // Buffer this RREQ
         BufferedRreq entry;
@@ -1063,7 +1013,6 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         
         uint64_t key = MakeRreqKey(rreq.GetOrigin(), rreq.GetId());
         m_bufferedRreqs[key] = entry;
-        NS_LOG_UNCOND("RecvRequest: Buffered RREQ count = " << m_bufferedRreqs.size());
         
         // Start Timer T if this is first RREQ for this request
         if (!IsTimerActive(m_evaluationTimer))
@@ -1072,7 +1021,6 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
                                                     &RoutingProtocol::EvaluateAndSendRrep,
                                                     this);
             NS_LOG_DEBUG("Started evaluation timer T=" << m_evaluationWindow.GetSeconds() << "s");
-            NS_LOG_UNCOND("RecvRequest: Started Timer T = " << m_evaluationWindow.GetSeconds() << "s");
         }
         return;
     }
@@ -1091,14 +1039,16 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         }
     }
     
-    // STEP 5: Calculate NEF and apply threshold "NEF >= ETHF and 0.4 <= α <= 0.8?"
+    // STEP 5: Calculate NEF and apply threshold
+    // Flowchart: "NEF >= ETHF and 0.4 <= α <= 0.8?"
+    // - NEF must be >= ETHF (energy threshold factor)
+    // - Alpha is already constrained to [0.4, 0.8] by attribute checker
     double myNef = ComputeNef();
-    double threshold = m_alpha * m_ethf;
     
-    if (myNef < threshold)
+    if (myNef < m_ethf)
     {
         NS_LOG_DEBUG("Node " << m_node->GetId() << " dropping RREQ: NEF " 
-                     << myNef << " < threshold " << threshold);
+                     << myNef << " < ETHF threshold " << m_ethf);
         return;
     }
     
@@ -1132,52 +1082,43 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
 }
 
 //==========================================================================
-// G-AODV Flowchart: EvaluateAndSendRrep
-// "Timer expired" -> "RREP to be sent to source with high REF"
+// EDA-AODV Paper Section 4.1:
+// "destination node waits a time interval T to receive more RREQ packets
+//  and then choose the path of maximum RqEF for sending RREP packet"
 //==========================================================================
 
 void
 RoutingProtocol::EvaluateAndSendRrep()
 {
     NS_LOG_FUNCTION(this);
-    NS_LOG_UNCOND("EvaluateAndSendRrep: Node " << m_node->GetId() 
-                  << " Timer T expired - evaluating " << m_bufferedRreqs.size() << " buffered RREQs");
     
     if (m_bufferedRreqs.empty())
     {
         NS_LOG_DEBUG("No buffered RREQs to evaluate");
-        NS_LOG_UNCOND("EvaluateAndSendRrep: No buffered RREQs!");
         return;
     }
     
-    // EDA-AODV: Select path with MAXIMUM RqEF (max-min energy selection)
-    // RqEF represents the minimum energy along the path, so we pick the 
-    // path where the bottleneck node has the highest energy
-    double bestRqEF = -1.0;
+    // EDA-AODV Paper: Select path with MAXIMUM RREQEF (max-min energy)
+    // "choose the path of maximum RqEF" - the path where the weakest node
+    // has the highest energy, maximizing route lifetime
+    double bestRreqef = -1.0;
     BufferedRreq bestEntry;
     
     for (const auto& kv : m_bufferedRreqs)
     {
-        double rqef = kv.second.header.GetRreqEf();
+        double rreqef = kv.second.header.GetRreqEf();
         NS_LOG_DEBUG("RREQ from " << kv.second.header.GetOrigin() 
-                     << " via " << kv.second.sender << " RqEF=" << rqef);
-        NS_LOG_UNCOND("EvaluateAndSendRrep: RREQ from " 
-                      << kv.second.header.GetOrigin() 
-                      << " RqEF=" << rqef);
+                     << " via " << kv.second.sender << " RREQEF=" << rreqef);
         
-        if (rqef > bestRqEF)
+        if (rreqef > bestRreqef)
         {
-            bestRqEF = rqef;
+            bestRreqef = rreqef;
             bestEntry = kv.second;
         }
     }
     
-    NS_LOG_INFO("EDA-AODV: Selected best path: origin=" << bestEntry.header.GetOrigin()
-                << " via " << bestEntry.sender << " RqEF=" << bestRqEF);
-    NS_LOG_UNCOND("EvaluateAndSendRrep: BEST path (max RqEF) - origin=" 
-                  << bestEntry.header.GetOrigin() 
-                  << " via " << bestEntry.sender 
-                  << " RqEF=" << bestRqEF);
+    NS_LOG_INFO("EDA-AODV: Selected best path with max RREQEF: origin=" << bestEntry.header.GetOrigin()
+                << " via " << bestEntry.sender << " RREQEF=" << bestRreqef);
     
     // Get route to origin and send RREP
     RoutingTableEntry toOrigin;
@@ -1185,17 +1126,12 @@ RoutingProtocol::EvaluateAndSendRrep()
     {
         NS_LOG_INFO("Found route to origin " << bestEntry.header.GetOrigin() 
                     << ", sending RREP via " << toOrigin.GetNextHop());
-        NS_LOG_UNCOND("EvaluateAndSendRrep: Sending RREP to origin " 
-                      << bestEntry.header.GetOrigin() 
-                      << " via " << toOrigin.GetNextHop());
         SendReply(bestEntry.header, toOrigin);
     }
     else
     {
         NS_LOG_WARN("No route to origin " << bestEntry.header.GetOrigin() 
                     << " - attempting emergency route creation");
-        NS_LOG_UNCOND("EvaluateAndSendRrep: WARNING - No route to origin " 
-                      << bestEntry.header.GetOrigin());
         
         // Emergency fallback: create route from buffered entry info
         if (!m_socketAddresses.empty())
@@ -1336,17 +1272,12 @@ void
 RoutingProtocol::RecvReply(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address sender)
 {
     NS_LOG_INFO("RecvReply: receiver=" << receiver << " sender=" << sender);
-    NS_LOG_UNCOND("RecvReply: Node " << m_node->GetId() 
-                  << " received RREP from " << sender);
     
     RrepHeader rrep;
     p->RemoveHeader(rrep);
     
     NS_LOG_INFO("RREP received: dst=" << rrep.GetDst() << " origin=" << rrep.GetOrigin() 
                 << " hopCount=" << (int)rrep.GetHopCount());
-    NS_LOG_UNCOND("RREP Details: dst=" << rrep.GetDst() 
-                  << " origin=" << rrep.GetOrigin() 
-                  << " hopCount=" << (int)rrep.GetHopCount());
     
     uint8_t hopCount = rrep.GetHopCount() + 1;
     rrep.SetHopCount(hopCount);
@@ -1408,10 +1339,6 @@ RoutingProtocol::RecvReply(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address send
     if (IsMyOwnAddress(rrep.GetOrigin()))
     {
         NS_LOG_INFO("RREP received at origin for " << dst);
-        NS_LOG_UNCOND("RecvReply: Node " << m_node->GetId() 
-                      << " is ORIGIN - route to " << dst 
-                      << " established via " << sender 
-                      << " - sending queued packets");
         
         // Cancel retry timer
         if (m_addressReqTimer.find(dst) != m_addressReqTimer.end())
@@ -1430,9 +1357,6 @@ RoutingProtocol::RecvReply(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address send
     RoutingTableEntry toOrigin;
     if (m_routingTable.LookupValidRoute(rrep.GetOrigin(), toOrigin))
     {
-        NS_LOG_UNCOND("RecvReply: Node " << m_node->GetId() 
-                      << " forwarding RREP to origin " << rrep.GetOrigin() 
-                      << " via " << toOrigin.GetNextHop());
         
         toOrigin.InsertPrecursor(sender);
         m_routingTable.Update(toOrigin);
@@ -1552,17 +1476,6 @@ void
 RoutingProtocol::RecvGaodvv1(Ptr<Socket> socket)
 {
     NS_LOG_FUNCTION(this << socket);
-    NS_LOG_UNCOND("*** RecvGaodvv1 CALLED on node " << m_ipv4->GetObject<Node>()->GetId() 
-                  << " at t=" << Simulator::Now().GetSeconds() << "s ***");
-    NS_LOG_UNCOND("RecvGaodvv1 CALLED on node " << m_node->GetId() 
-                  << " at time " << Simulator::Now().GetSeconds() 
-                  << " socket=" << socket);
-    
-    // Check socket binding
-    Address localAddr;
-    socket->GetSockName(localAddr);
-    InetSocketAddress local = InetSocketAddress::ConvertFrom(localAddr);
-    NS_LOG_UNCOND("  Socket bound to " << local.GetIpv4() << ":" << local.GetPort());
     
     Ptr<Packet> packet;
     Address senderAddress;
@@ -1574,9 +1487,6 @@ RoutingProtocol::RecvGaodvv1(Ptr<Socket> socket)
             NS_LOG_ERROR("RecvGaodvv1: Received NULL packet!");
             continue;
         }
-        
-        NS_LOG_UNCOND("Node " << m_node->GetId() << " received GAODV packet of size " 
-                      << packet->GetSize() << " bytes");
         
         InetSocketAddress senderInet = InetSocketAddress::ConvertFrom(senderAddress);
         Ipv4Address sender = senderInet.GetIpv4();

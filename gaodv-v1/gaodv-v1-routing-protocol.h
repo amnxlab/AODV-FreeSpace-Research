@@ -104,7 +104,7 @@ protected:
 private:
     //=== G-AODV Configurable Parameters (from Attributes) ===
     
-    double m_alpha;              ///< Threshold factor α (0.4-0.8), default 0.6
+    double m_alpha;              ///< Threshold factor α (0.5-0.7), default 0.6
     double m_ethf;               ///< Energy Threshold Factor
     double m_maxRange;           ///< Max communication range (meters)
     double m_initialEnergy;      ///< Initial energy for NEF calculation

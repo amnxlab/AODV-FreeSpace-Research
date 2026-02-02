@@ -171,8 +171,8 @@ uint32_t
 RreqHeader::GetSerializedSize() const
 {
     // Standard fields: 4 + 4 + 4 + 4 + 4 + 4 = 24 bytes
-    // GAODV-V1 extensions: 8 + 8 + 8 + 8 = 32 bytes (3 doubles for position + 1 for RREQEF)
-    return 24 + 32;
+    // GAODV-V1 extensions: 8 + 8 + 8 = 24 bytes (2 doubles for position X,Y + 1 for RREQEF)
+    return 24 + 24;
 }
 
 void
@@ -191,10 +191,10 @@ RreqHeader::Serialize(Buffer::Iterator start) const
     WriteTo(i, m_origin);
     i.WriteHtonU32(m_originSeqNo);
     
-    // GAODV-V1 extensions: position (x, y, z)
+    // GAODV-V1 extensions: position (x, y) - 2D only for ground MANETs
     i.WriteHtonU64(DoubleToUint64(m_position.x));
     i.WriteHtonU64(DoubleToUint64(m_position.y));
-    i.WriteHtonU64(DoubleToUint64(m_position.z));
+    // Z axis removed - using 2D positioning only
     
     // GAODV-V1 extensions: RREQEF
     i.WriteHtonU64(m_rreqEfBits);
@@ -216,10 +216,10 @@ RreqHeader::Deserialize(Buffer::Iterator start)
     ReadFrom(i, m_origin);
     m_originSeqNo = i.ReadNtohU32();
     
-    // GAODV-V1 extensions: position (x, y, z)
+    // GAODV-V1 extensions: position (x, y) - 2D only for ground MANETs
     m_position.x = Uint64ToDouble(i.ReadNtohU64());
     m_position.y = Uint64ToDouble(i.ReadNtohU64());
-    m_position.z = Uint64ToDouble(i.ReadNtohU64());
+    m_position.z = 0.0;  // Z axis not transmitted - set to 0
     
     // GAODV-V1 extensions: RREQEF
     m_rreqEfBits = i.ReadNtohU64();
@@ -232,7 +232,7 @@ RreqHeader::Print(std::ostream& os) const
 {
     os << "GAODV-V1 RREQ: dst=" << m_dst << " origin=" << m_origin
        << " id=" << m_requestId << " hops=" << (uint32_t)m_hopCount
-       << " pos=(" << m_position.x << "," << m_position.y << "," << m_position.z << ")"
+       << " pos=(" << m_position.x << "," << m_position.y << ")"
        << " RREQEF=" << GetRreqEf();
 }
 
@@ -308,7 +308,7 @@ RreqHeader::operator==(const RreqHeader& o) const
             m_dst == o.m_dst && m_dstSeqNo == o.m_dstSeqNo &&
             m_origin == o.m_origin && m_originSeqNo == o.m_originSeqNo &&
             m_position.x == o.m_position.x && m_position.y == o.m_position.y &&
-            m_position.z == o.m_position.z && m_rreqEfBits == o.m_rreqEfBits);
+            m_rreqEfBits == o.m_rreqEfBits);  // Z axis removed - 2D only
 }
 
 std::ostream&
