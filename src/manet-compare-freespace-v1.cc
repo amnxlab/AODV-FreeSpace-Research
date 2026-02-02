@@ -24,6 +24,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <sstream>
 
 using namespace ns3;
 
@@ -93,6 +94,16 @@ private:
     double m_txp{7.5};
     bool m_traceMobility{false};
     bool m_flowMonitor{false};
+    
+    // EDA-AODV Paper Parameters
+    double m_areaWidth{800.0};   // Simulation area width in meters (paper: 800m)
+    double m_areaHeight{400.0};  // Simulation area height in meters (paper: 400m)
+    double m_minSpeed{5.0};      // Minimum node speed in m/s (paper: 5 m/s)
+    double m_maxSpeed{55.0};     // Maximum node speed in m/s (paper: 55 m/s)
+    double m_pauseTime{50.0};    // Pause time in seconds (paper: 50-500s)
+    double m_initialEnergyJ{20.0};  // Initial energy per node in Joules (paper: 20J)
+    uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
+    double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
 
     // Metrics
     std::vector<double> m_initialEnergy;
@@ -183,6 +194,15 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("nSinks", "Number of sink nodes", m_nSinks);
     cmd.AddValue("totalTime", "Simulation time in seconds", m_totalTime);
     cmd.AddValue("txpower", "Transmission power in dBm", m_txp);
+    // EDA-AODV Paper Parameters
+    cmd.AddValue("areaWidth", "Simulation area width in meters", m_areaWidth);
+    cmd.AddValue("areaHeight", "Simulation area height in meters", m_areaHeight);
+    cmd.AddValue("minSpeed", "Minimum node speed in m/s", m_minSpeed);
+    cmd.AddValue("maxSpeed", "Maximum node speed in m/s", m_maxSpeed);
+    cmd.AddValue("pauseTime", "Pause time in seconds", m_pauseTime);
+    cmd.AddValue("initialEnergy", "Initial energy per node in Joules", m_initialEnergyJ);
+    cmd.AddValue("packetSize", "Packet size in bytes", m_packetSize);
+    cmd.AddValue("packetRate", "Packets per second", m_packetRate);
     cmd.Parse(argc, argv);
 
     std::vector<std::string> allowedProtocols{"OLSR", "AODV", "DSDV", "DSR", "GAODV"};
@@ -218,32 +238,35 @@ ManetCompare1::Run()
     // Use member variables (configurable via command line)
     int nWifis = m_nWifis;
     double TotalTime = m_totalTime;
-    std::string rate("2048bps");
+    // EDA-AODV Paper: 4 pkt/s × 512 bytes × 8 bits = 16384 bps
+    uint32_t dataRateBps = static_cast<uint32_t>(m_packetRate * m_packetSize * 8);
+    std::string rate = std::to_string(dataRateBps) + "bps";
     std::string phyMode("OfdmRate6Mbps");  // Match 802.11a - AODV test uses OfdmRate6Mbps
     
     // ========== Network connectivity parameters ==========
     // m_txp is configurable from command line (default 7.5 dBm)
     
-    std::cout << "\n========== SIMULATION PARAMETERS ==========" << std::endl;
+    std::cout << "\n========== SIMULATION PARAMETERS (EDA-AODV Paper) ==========" << std::endl;
     std::cout << "Protocol: " << m_protocolName << std::endl;
     std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
-    std::cout << "WiFi: 802.11a, OfdmRate6Mbps, Default channel" << std::endl;
-    std::cout << "TX Power: " << m_txp << " dBm" << std::endl;
-    std::cout << "Grid spacing: 120m (matching AODV test)" << std::endl;
-    std::cout << "Application start: 20% of sim time (routing stabilization)" << std::endl;
+    std::cout << "Mobility: STATIC (grid layout, 120m spacing)" << std::endl;
+    std::cout << "WiFi: 802.11a, OfdmRate6Mbps, Two-Ray Ground" << std::endl;
+    std::cout << "TX Power: " << m_txp << " dBm, Range: 250m" << std::endl;
+    std::cout << "Initial Energy: " << m_initialEnergyJ << " J per node" << std::endl;
+    std::cout << "Traffic: CBR " << m_packetRate << " pkt/s, " << m_packetSize << "B packets (" << dataRateBps << " bps)" << std::endl;
     std::cout << "Simulation time: " << TotalTime << "s" << std::endl;
-    std::cout << "==========================================\n" << std::endl;
+    std::cout << "============================================================\n" << std::endl;
 
-    Config::SetDefault("ns3::OnOffApplication::PacketSize", StringValue("64"));
+    Config::SetDefault("ns3::OnOffApplication::PacketSize", UintegerValue(m_packetSize));
     Config::SetDefault("ns3::OnOffApplication::DataRate", StringValue(rate));
     Config::SetDefault("ns3::WifiRemoteStationManager::NonUnicastMode", StringValue(phyMode));
 
     NodeContainer adhocNodes;
     adhocNodes.Create(nWifis);
 
-    // 🔋 Energy Source - Simple energy tracking
+    // 🔋 Energy Source - EDA-AODV Paper: 20 Joules initial energy
     BasicEnergySourceHelper energyHelper;
-    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(1000.0));  // 1000J per node
+    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(m_initialEnergyJ));
     EnergySourceContainer energySources = energyHelper.Install(adhocNodes);
 
     // 📶 Wi-Fi setup - MATCH AODV test configuration EXACTLY
@@ -265,7 +288,11 @@ ManetCompare1::Run()
         wifiPhy.Set("TxPowerEnd", DoubleValue(m_txp));
     }
     
-    YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();  // Use Default() like AODV test
+    // EDA-AODV Paper: Two-Ray Ground propagation model
+    YansWifiChannelHelper wifiChannel;
+    wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
+    wifiChannel.AddPropagationLoss("ns3::TwoRayGroundPropagationLossModel",
+                                   "HeightAboveZ", DoubleValue(1.5));  // Antenna height 1.5m
     Ptr<YansWifiChannel> chan = wifiChannel.Create();
     wifiPhy.SetChannel(chan);
     
@@ -290,20 +317,19 @@ ManetCompare1::Run()
     Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyRxDrop",
                                   MakeCallback(&PhyRxDropCallback));
 
-    // 🚶 Mobility - Grid positioning MATCHING AODV test (120m spacing)
+    // 🚶 Mobility - STATIC for initial testing (grid positioning)
     MobilityHelper mobilityAdhoc;
     
-    // Use GridPositionAllocator matching AODV test exactly
+    // Grid positioning - 120m spacing for good radio connectivity
     mobilityAdhoc.SetPositionAllocator("ns3::GridPositionAllocator",
                                       "MinX", DoubleValue(0.0),
                                       "MinY", DoubleValue(0.0),
-                                      "DeltaX", DoubleValue(120.0),  // AODV test uses 120m spacing
+                                      "DeltaX", DoubleValue(120.0),
                                       "DeltaY", DoubleValue(0),
                                       "GridWidth", UintegerValue(nWifis),
                                       "LayoutType", StringValue("RowFirst"));
     
-    // STATIC MOBILITY: Nodes do not move (ConstantPositionMobilityModel)
-    // Future GAODV versions may use dynamic mobility (RandomWalk2d, etc.)
+    // Static mobility - nodes do not move
     mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobilityAdhoc.Install(adhocNodes);
 
@@ -350,11 +376,12 @@ ManetCompare1::Run()
         // GAODV: G-AODV flowchart with geometric routing and energy factors
         // Logging disabled for production runs (enable with NS_LOG environment variable if needed)
         
+        // EDA-AODV Paper: ETHF = 10% of initial energy, Alpha = 0.6
         gaodv.Set("Alpha", DoubleValue(0.6));
-        gaodv.Set("Ethf", DoubleValue(0.2));
-        gaodv.Set("MaxRange", DoubleValue(250.0));  // Matches TX power range
-        gaodv.Set("InitialEnergy", DoubleValue(500.0));
-        gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));  // Reduced from 2s to 1s
+        gaodv.Set("Ethf", DoubleValue(0.1));  // Paper: 10% energy threshold
+        gaodv.Set("MaxRange", DoubleValue(250.0));  // Paper: 250m transmission range
+        gaodv.Set("InitialEnergy", DoubleValue(m_initialEnergyJ));  // Match simulation energy
+        gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));
         gaodv.Set("W1", DoubleValue(0.25));
         gaodv.Set("W2", DoubleValue(0.25));
         gaodv.Set("W3", DoubleValue(0.25));

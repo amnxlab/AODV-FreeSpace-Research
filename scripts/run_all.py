@@ -229,15 +229,39 @@ def setup_simulation(ns3_path, source_file, copy_gaodv=False):
 
 
 # ========== EXPERIMENT EXECUTION ==========
-def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number):
-    """Run a single simulation experiment."""
+def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_args):
+    """Run a single simulation experiment.
+    
+    Args:
+        ns3_path: Path to NS-3 installation
+        protocol: Protocol name
+        nodes: Number of nodes
+        txpower: TX power
+        run_number: Run number
+        sim_args: Dictionary of additional simulation arguments
+    """
     print(f"  Running: {protocol} | Nodes: {nodes} | TxPower: {txpower} | Run: {run_number}")
+    
+    # Build NS-3 command arguments
+    ns3_args = f"--protocol={protocol} --nWifis={nodes} --txpower={txpower}"
+    
+    # Add optional simulation parameters from EDA-AODV paper
+    if sim_args.get('simtime'):
+        ns3_args += f" --totalTime={sim_args['simtime']}"
+    if sim_args.get('sinks'):
+        ns3_args += f" --nSinks={sim_args['sinks']}"
+    if sim_args.get('initial_energy'):
+        ns3_args += f" --initialEnergy={sim_args['initial_energy']}"
+    if sim_args.get('packet_size'):
+        ns3_args += f" --packetSize={sim_args['packet_size']}"
+    if sim_args.get('packet_rate'):
+        ns3_args += f" --packetRate={sim_args['packet_rate']}"
     
     # Determine run command - use string for shell=True
     if (ns3_path / "ns3").exists():
-        run_cmd = f'./ns3 run "{PROGRAM_NAME} --protocol={protocol}"'
+        run_cmd = f'./ns3 run "{PROGRAM_NAME} {ns3_args}"'
     else:
-        run_cmd = f'./waf --run "{PROGRAM_NAME} --protocol={protocol}"'
+        run_cmd = f'./waf --run "{PROGRAM_NAME} {ns3_args}"'
     
     try:
         result = subprocess.run(
@@ -319,9 +343,18 @@ def run_experiments(args):
     successful = 0
     failed = 0
     
+    # Build simulation arguments dictionary
+    sim_args = {
+        'simtime': args.simtime,
+        'sinks': args.sinks,
+        'initial_energy': args.initial_energy,
+        'packet_size': args.packet_size,
+        'packet_rate': args.packet_rate,
+    }
+    
     for i, (protocol, nodes, txpower, run) in enumerate(experiments, 1):
         print(f"[{i}/{len(experiments)}]", end=" ")
-        if run_single_experiment(args.ns3_path, protocol, nodes, txpower, run):
+        if run_single_experiment(args.ns3_path, protocol, nodes, txpower, run, sim_args):
             successful += 1
         else:
             failed += 1
@@ -399,11 +432,25 @@ Examples:
                         choices=['GAODV', 'AODV', 'OLSR', 'DSDV', 'DSR'],
                         help='Protocols to test')
     parser.add_argument('--nodes', nargs='+', type=int, default=[50],
-                        help='Number of nodes to test')
+                        help='Number of nodes to test (default: 50 per EDA-AODV paper)')
     parser.add_argument('--txpower', nargs='+', type=float, default=[7.5],
                         help='Transmission power values (dBm)')
     parser.add_argument('--runs', type=int, default=5,
                         help='Number of runs per configuration')
+    
+    # EDA-AODV Paper Simulation Parameters (Table 1)
+    parser.add_argument('--simtime', type=int, default=500,
+                        help='Simulation time in seconds (default: 500)')
+    parser.add_argument('--sinks', type=int, default=10,
+                        help='Number of sink nodes (default: 10)')
+    parser.add_argument('--initial-energy', type=float, default=20.0, dest='initial_energy',
+                        help='Initial energy per node in Joules (default: 20)')
+    parser.add_argument('--packet-size', type=int, default=512, dest='packet_size',
+                        help='Packet size in bytes (default: 512)')
+    parser.add_argument('--packet-rate', type=int, default=4, dest='packet_rate',
+                        help='Packets per second (default: 4)')
+    
+    # System options
     parser.add_argument('--ns3-path', type=Path, default=None,
                         help='Path to NS-3 installation (auto-detected if not specified)')
     parser.add_argument('--source-file', type=Path, default=None,
@@ -434,6 +481,11 @@ Examples:
     print(f"  Nodes: {args.nodes}")
     print(f"  TX Power: {args.txpower}")
     print(f"  Runs: {args.runs}")
+    print(f"  Simulation Time: {args.simtime}s")
+    print(f"  Sinks: {args.sinks}")
+    print(f"  Initial Energy: {args.initial_energy}J")
+    print(f"  Packet Size: {args.packet_size}B")
+    print(f"  Packet Rate: {args.packet_rate} pkt/s")
     print()
     
     # Run experiments

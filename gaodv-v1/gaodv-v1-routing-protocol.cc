@@ -98,8 +98,8 @@ RoutingProtocol::GetTypeId()
                           MakeDoubleAccessor(&RoutingProtocol::m_w4),
                           MakeDoubleChecker<double>())
             .AddAttribute("PropagationSpeed",
-                          "Signal propagation speed (m/s)",
-                          DoubleValue(1500.0),
+                          "Signal propagation speed (m/s) - 3e8 for radio waves",
+                          DoubleValue(3.0e8),
                           MakeDoubleAccessor(&RoutingProtocol::m_propagationSpeed),
                           MakeDoubleChecker<double>())
             // Standard AODV-like attributes
@@ -163,7 +163,7 @@ RoutingProtocol::RoutingProtocol()
       m_initialEnergy(500.0),
       m_evaluationWindow(Seconds(2.0)),
       m_w1(0.25), m_w2(0.25), m_w3(0.25), m_w4(0.25),
-      m_propagationSpeed(1500.0),
+      m_propagationSpeed(3.0e8),  // Speed of light for radio waves in free space
       m_rreqRetries(2),
       m_ttlStart(1),
       m_ttlIncrement(2),
@@ -1150,32 +1150,34 @@ RoutingProtocol::EvaluateAndSendRrep()
         return;
     }
     
-    // Find RREQ with highest REF
-    double bestRef = -1.0;
+    // EDA-AODV: Select path with MAXIMUM RqEF (max-min energy selection)
+    // RqEF represents the minimum energy along the path, so we pick the 
+    // path where the bottleneck node has the highest energy
+    double bestRqEF = -1.0;
     BufferedRreq bestEntry;
     
     for (const auto& kv : m_bufferedRreqs)
     {
-        double ref = ComputeRef(kv.second);
+        double rqef = kv.second.header.GetRreqEf();
         NS_LOG_DEBUG("RREQ from " << kv.second.header.GetOrigin() 
-                     << " via " << kv.second.sender << " REF=" << ref);
-        NS_LOG_UNCOND("EvaluateAndSendRrep: Evaluating RREQ from " 
+                     << " via " << kv.second.sender << " RqEF=" << rqef);
+        NS_LOG_UNCOND("EvaluateAndSendRrep: RREQ from " 
                       << kv.second.header.GetOrigin() 
-                      << " REF=" << ref);
+                      << " RqEF=" << rqef);
         
-        if (ref > bestRef)
+        if (rqef > bestRqEF)
         {
-            bestRef = ref;
+            bestRqEF = rqef;
             bestEntry = kv.second;
         }
     }
     
-    NS_LOG_INFO("Selected best path: origin=" << bestEntry.header.GetOrigin()
-                << " via " << bestEntry.sender << " REF=" << bestRef);
-    NS_LOG_UNCOND("EvaluateAndSendRrep: BEST path selected - origin=" 
+    NS_LOG_INFO("EDA-AODV: Selected best path: origin=" << bestEntry.header.GetOrigin()
+                << " via " << bestEntry.sender << " RqEF=" << bestRqEF);
+    NS_LOG_UNCOND("EvaluateAndSendRrep: BEST path (max RqEF) - origin=" 
                   << bestEntry.header.GetOrigin() 
                   << " via " << bestEntry.sender 
-                  << " REF=" << bestRef);
+                  << " RqEF=" << bestRqEF);
     
     // Get route to origin and send RREP
     RoutingTableEntry toOrigin;
