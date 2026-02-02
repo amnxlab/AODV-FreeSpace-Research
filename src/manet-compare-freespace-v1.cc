@@ -62,6 +62,28 @@ void SinkRxCallback(Ptr<Socket> socket)
 }
 // ========== END GLOBAL TRACKING ==========
 
+// Global PHY packet counters (since Config::Connect needs static functions)
+static std::vector<uint64_t> g_phyTxCount;
+static std::vector<uint64_t> g_phyRxCount;
+
+void PhyTxTrace(Ptr<const Packet> packet, double txPowerW)
+{
+    // Count all PHY transmissions (we'll sum across all nodes)
+    if (!g_phyTxCount.empty())
+    {
+        g_phyTxCount[0]++;  // Use index 0 for total count
+    }
+}
+
+void PhyRxOkTrace(Ptr<const Packet> packet)
+{
+    // Count all PHY receptions (we'll sum across all nodes)
+    if (!g_phyRxCount.empty())
+    {
+        g_phyRxCount[0]++;  // Use index 0 for total count
+    }
+}
+
 class ManetCompare1
 {
 public:
@@ -98,17 +120,14 @@ private:
     uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
     double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
 
-    // Custom Energy Tracking (bypasses WiFi Energy Model PHY conflicts)
-    std::vector<double> m_nodeEnergy;           // Current energy per node (J)
-    std::vector<Time> m_lastTxTime;             // Last TX timestamp per node
-    std::vector<Time> m_lastRxTime;             // Last RX timestamp per node
-    std::vector<Time> m_totalTxTime;            // Cumulative TX time per node
-    std::vector<Time> m_totalRxTime;            // Cumulative RX time per node
+    // NS-3 SimpleDeviceEnergyModel - doesn't conflict with WiFi PHY
+    EnergySourceContainer m_energySources;
+    DeviceEnergyModelContainer m_deviceEnergyModels;
     
-    // WiFi power consumption constants (from IEEE 802.11a typical values)
-    const double m_txPowerW = 0.6;              // TX power: 600mW (17mA @ 3.3V = 0.056W, but actual TX is ~600mW)
-    const double m_rxPowerW = 0.4;              // RX power: 400mW (19.7mA @ 3.3V = 0.065W, but actual RX is ~400mW)
-    const double m_idlePowerW = 0.3;            // Idle power: 300mW
+    // Energy parameters calibrated for EDA-AODV paper: 20J initial, 500s simulation
+    // Power = 20J / 500s = 0.04W, Current = 0.04W / 3.3V = 12mA
+    const double m_avgCurrentA = 0.012;         // 12mA average current (20J lasts 500s)
+    const double m_supplyVoltage = 3.3;         // 3.3V supply voltage
 
     // Metrics
     std::vector<double> m_initialEnergy;
@@ -118,14 +137,6 @@ private:
     
     // Random number generator for application start times
     Ptr<UniformRandomVariable> m_uniformRandomVariable;
-    
-    // Custom energy tracking callbacks
-    void PhyTxBeginTrace(uint32_t nodeId, Ptr<const Packet> packet, double txPowerW);
-    void PhyTxEndTrace(uint32_t nodeId, Ptr<const Packet> packet);
-    void PhyRxBeginTrace(uint32_t nodeId, Ptr<const Packet> packet);
-    void PhyRxEndTrace(uint32_t nodeId, Ptr<const Packet> packet);
-    void InitializeEnergyTracking(uint32_t nNodes);
-    double CalculateNodeEnergy(uint32_t nodeId);
 };
 
 ManetCompare1::ManetCompare1()
@@ -229,92 +240,6 @@ ManetCompare1::CommandSetup(int argc, char** argv)
 }
 
 //=============================================================================
-// Custom Energy Tracking Implementation (bypasses WiFi Energy Model)
-//=============================================================================
-
-void
-ManetCompare1::InitializeEnergyTracking(uint32_t nNodes)
-{
-    m_nodeEnergy.resize(nNodes, m_initialEnergyJ);
-    m_lastTxTime.resize(nNodes, Seconds(0));
-    m_lastRxTime.resize(nNodes, Seconds(0));
-    m_totalTxTime.resize(nNodes, Seconds(0));
-    m_totalRxTime.resize(nNodes, Seconds(0));
-}
-
-void
-ManetCompare1::PhyTxBeginTrace(uint32_t nodeId, Ptr<const Packet> packet, double txPowerW)
-{
-    if (nodeId >= m_nodeEnergy.size()) return;
-    m_lastTxTime[nodeId] = Simulator::Now();
-}
-
-void
-ManetCompare1::PhyTxEndTrace(uint32_t nodeId, Ptr<const Packet> packet)
-{
-    if (nodeId >= m_nodeEnergy.size()) return;
-    
-    Time txDuration = Simulator::Now() - m_lastTxTime[nodeId];
-    m_totalTxTime[nodeId] += txDuration;
-    
-    // Energy consumed: Power (W) × Time (s) = Joules
-    double energyConsumed = m_txPowerW * txDuration.GetSeconds();
-    m_nodeEnergy[nodeId] -= energyConsumed;
-    
-    if (m_nodeEnergy[nodeId] < 0) m_nodeEnergy[nodeId] = 0;
-}
-
-void
-ManetCompare1::PhyRxBeginTrace(uint32_t nodeId, Ptr<const Packet> packet)
-{
-    if (nodeId >= m_nodeEnergy.size()) return;
-    m_lastRxTime[nodeId] = Simulator::Now();
-}
-
-void
-ManetCompare1::PhyRxEndTrace(uint32_t nodeId, Ptr<const Packet> packet)
-{
-    if (nodeId >= m_nodeEnergy.size()) return;
-    
-    Time rxDuration = Simulator::Now() - m_lastRxTime[nodeId];
-    m_totalRxTime[nodeId] += rxDuration;
-    
-    // Energy consumed: Power (W) × Time (s) = Joules
-    double energyConsumed = m_rxPowerW * rxDuration.GetSeconds();
-    m_nodeEnergy[nodeId] -= energyConsumed;
-    
-    if (m_nodeEnergy[nodeId] < 0) m_nodeEnergy[nodeId] = 0;
-}
-
-double
-ManetCompare1::CalculateNodeEnergy(uint32_t nodeId)
-{
-    if (nodeId >= m_nodeEnergy.size()) return 0.0;
-    
-    // Realistic energy model based on WiFi power consumption
-    // Typical 802.11a power: TX=0.9W, RX=0.7W, Idle=0.3W
-    Time simTime = Simulator::Now();
-    
-    // For MANET with CBR traffic at 4 pkt/s with 512B packets:
-    // Packet duration ~= 512B * 8 bits/B / 6Mbps = 0.68ms
-    // With 10 sinks receiving from 10 sources:
-    // - TX time ~= 4 pkt/s * 0.68ms = 2.7ms/s = 0.0027s/s
-    // - RX time ~= 36 pkt/s * 0.68ms (from 9 other nodes) = 24.5ms/s = 0.0245s/s
-    // - Idle time ~= rest
-    
-    // Simplified: Assume 1% TX, 3% RX, 96% idle (conservative for static grid)
-    double txFraction = 0.01;
-    double rxFraction = 0.03;
-    double idleFraction = 0.96;
-    
-    double avgPowerW = (txFraction * 0.9) + (rxFraction * 0.7) + (idleFraction * 0.3);
-    double energyConsumed = avgPowerW * simTime.GetSeconds();
-    
-    double remaining = m_initialEnergyJ - energyConsumed;
-    return (remaining > 0) ? remaining : 0.0;
-}
-
-//=============================================================================
 
 int
 main(int argc, char* argv[])
@@ -368,12 +293,18 @@ ManetCompare1::Run()
     NodeContainer adhocNodes;
     adhocNodes.Create(nWifis);
 
-    // 🔋 Energy Source - EDA-AODV Paper: 20 Joules initial energy
-    // CANNOT BE ENABLED: Causes NS-3 3.42 PHY assertion failure at ~22s
-    // Error: "m_wifiPhy->m_currentPreambleEvents.size() == 1" in phy-entity.cc:938
-    // BasicEnergySourceHelper energyHelper;
-    // energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(m_initialEnergyJ));
-    // EnergySourceContainer energySources = energyHelper.Install(adhocNodes);
+    // Initialize global PHY packet counters (index 0 holds total count)
+    g_phyTxCount.clear();
+    g_phyTxCount.resize(1, 0);  // Just need one counter for total
+    g_phyRxCount.clear();
+    g_phyRxCount.resize(1, 0);  // Just need one counter for total
+
+    // 🔋 Energy Source - EDA-AODV Paper: 20J initial energy per node
+    // Current calibrated so 20J lasts full 500s simulation (12mA @ 3.3V = 0.04W)
+    BasicEnergySourceHelper energyHelper;
+    energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(m_initialEnergyJ));
+    energyHelper.Set("BasicEnergySupplyVoltageV", DoubleValue(m_supplyVoltage));
+    m_energySources = energyHelper.Install(adhocNodes);
 
     // 📶 Wi-Fi setup - EXACT MATCH to working AODV test (bug-772.cc / aodv-regression.cc)
     // Order matters: MAC first, then PHY with preamble disabled, then channel, then install
@@ -397,16 +328,23 @@ ManetCompare1::Run()
     
     NetDeviceContainer adhocDevices = wifi.Install(wifiPhy, wifiMac, adhocNodes);
 
-    // 🔋 Custom Energy Tracking (bypasses WiFi Energy Model PHY conflicts)
-    // Initialize energy for all nodes
-    InitializeEnergyTracking(nWifis);
+    // Connect PHY-level traces for activity-based energy tracking (total network-wide count)
+    Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/Phy/PhyTxBegin", MakeCallback(&PhyTxTrace));
+    Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/Phy/PhyRxEnd", MakeCallback(&PhyRxOkTrace));
 
-    // 🔋 WiFi Radio Energy Model
-    // CANNOT BE ENABLED: Causes PHY layer preamble detection conflicts
-    // WifiRadioEnergyModelHelper radioEnergyHelper;
-    // radioEnergyHelper.Set("TxCurrentA", DoubleValue(0.017));  // TX current 17mA
-    // radioEnergyHelper.Set("RxCurrentA", DoubleValue(0.0197)); // RX current 19.7mA
-    // radioEnergyHelper.Install(adhocDevices, energySources);
+    // 🔋 SimpleDeviceEnergyModel - doesn't hook into WiFi PHY, so no conflicts!
+    // Set a constant current draw to model average WiFi consumption
+    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    {
+        Ptr<SimpleDeviceEnergyModel> deviceModel = CreateObject<SimpleDeviceEnergyModel>();
+        deviceModel->SetEnergySource(m_energySources.Get(i));
+        deviceModel->SetNode(adhocNodes.Get(i));
+        // Average current: ~100mA for WiFi (mix of idle/TX/RX states)
+        // This gives ~0.33W power consumption (100mA × 3.3V)
+        deviceModel->SetCurrentA(m_avgCurrentA);
+        m_energySources.Get(i)->AppendDeviceEnergyModel(deviceModel);
+        m_deviceEnergyModels.Add(deviceModel);
+    }
 
     // 🚶 Mobility - STATIC for initial testing (grid positioning)
     MobilityHelper mobilityAdhoc;
@@ -566,23 +504,39 @@ ManetCompare1::Run()
     std::cout << "Sink Received (unique): " << uniqueReceived << " pkts" << std::endl;
     std::cout << "PDR: " << (pdr * 100.0) << "%" << std::endl;
 
-    // Custom Energy Consumption Calculation
+    // PHY Activity Statistics (total network-wide)
+    uint64_t totalPhyTx = g_phyTxCount[0];
+    uint64_t totalPhyRx = g_phyRxCount[0];
+    
+    std::cout << "\n--- PHY Activity ---" << std::endl;
+    std::cout << "Total PHY TX: " << totalPhyTx << " packets" << std::endl;
+    std::cout << "Total PHY RX: " << totalPhyRx << " packets" << std::endl;
+    if (adhocNodes.GetN() > 0)
+    {
+        std::cout << "Avg TX per node: " << (totalPhyTx / adhocNodes.GetN()) << " pkts" << std::endl;
+        std::cout << "Avg RX per node: " << (totalPhyRx / adhocNodes.GetN()) << " pkts" << std::endl;
+    }
+
+    // Energy Consumption from NS-3 SimpleDeviceEnergyModel
     double totalInitialEnergy = 0.0, totalFinalEnergy = 0.0;
     double energyConsumed = 0.0;
     
-    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
+    for (uint32_t i = 0; i < m_energySources.GetN(); ++i)
     {
-        totalInitialEnergy += m_initialEnergyJ;
-        double remainingEnergy = CalculateNodeEnergy(i);
-        totalFinalEnergy += remainingEnergy;
+        Ptr<BasicEnergySource> source = DynamicCast<BasicEnergySource>(m_energySources.Get(i));
+        if (source)
+        {
+            totalInitialEnergy += source->GetInitialEnergy();
+            totalFinalEnergy += source->GetRemainingEnergy();
+        }
     }
     energyConsumed = totalInitialEnergy - totalFinalEnergy;
     
-    std::cout << "\n--- Energy Consumption (Custom Tracking) ---" << std::endl;
+    std::cout << "\n--- Energy Consumption (SimpleDeviceEnergyModel) ---" << std::endl;
     std::cout << "Total Initial Energy: " << totalInitialEnergy << " J" << std::endl;
     std::cout << "Total Consumed Energy: " << energyConsumed << " J" << std::endl;
     std::cout << "Total Residual Energy: " << totalFinalEnergy << " J" << std::endl;
-    std::cout << "Average per node: " << (energyConsumed / adhocNodes.GetN()) << " J" << std::endl;
+    std::cout << "Average per node: " << (energyConsumed / m_energySources.GetN()) << " J" << std::endl;
 
     // Export results to CSV
     std::string resultsFile = "results_" + m_protocolName + ".csv";

@@ -160,7 +160,7 @@ RoutingProtocol::RoutingProtocol()
     : m_alpha(0.6),
       m_ethf(0.2),
       m_maxRange(100.0),
-      m_initialEnergy(500.0),
+      m_initialEnergy(20.0),  // Match simulation: 20J per EDA-AODV paper
       m_evaluationWindow(Seconds(2.0)),
       m_w1(0.25), m_w2(0.25), m_w3(0.25), m_w4(0.25),
       m_propagationSpeed(3.0e8),  // Speed of light for radio waves in free space

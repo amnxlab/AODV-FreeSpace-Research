@@ -273,20 +273,20 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
             shell=True
         )
         
-        if result.returncode == 0:
-            # Parse metrics from output (check both stdout and stderr as NS-3 logs to stderr)
-            output = result.stdout + result.stderr
-            pdr_match = re.search(r'PDR:\s+([\d.]+)%', output)
-            sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
-            recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
-            energy_match = re.search(r'Total Consumed Energy:\s+([\d.]+)', output)
-            
+        # Parse metrics from output (check both stdout and stderr as NS-3 logs to stderr)
+        # NOTE: NS-3 often returns SIGSEGV (245/11) during Simulator::Destroy() cleanup
+        # even when simulation completed successfully. Check for actual results instead.
+        output = result.stdout + result.stderr
+        pdr_match = re.search(r'PDR:\s+([\d.]+)%', output)
+        sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
+        recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
+        energy_match = re.search(r'Total Consumed Energy:\s+([\d.]+)', output)
+        
+        # Simulation succeeded if we got PDR output (even if returncode != 0 due to cleanup crash)
+        if pdr_match:
             # Build output string with all available metrics
             metrics = []
-            if pdr_match:
-                metrics.append(f"PDR: {pdr_match.group(1)}%")
-            else:
-                metrics.append("PDR: N/A")
+            metrics.append(f"PDR: {pdr_match.group(1)}%")
             
             if sent_match and recv_match:
                 sent = int(sent_match.group(1))
@@ -304,8 +304,10 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
             print(f"    ✓ {' | '.join(metrics)}")
             return True
         else:
+            # True failure - no results produced
             print(f"    ✗ Failed")
-            print(f"       Error: {result.stderr[:200] if result.stderr else 'No error output'}")
+            error_output = result.stderr[:200] if result.stderr else 'No error output'
+            print(f"       Error: {error_output}")
             return False
     
     except subprocess.TimeoutExpired:
