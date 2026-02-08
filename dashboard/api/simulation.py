@@ -222,9 +222,9 @@ class SimulationRunner:
         # Dashboard assumes NS-3 is already built
         cmd.append('--skip-build')
             
-        # FORCE verbose mode for real-time output in dashboard
-        # Without this, run_all.py waits for ALL runs to complete before showing output
-        cmd.append('--verbose')
+        # Add verbose flag if user enabled it in dashboard
+        if params.get('verbose', False):
+            cmd.append('--verbose')
         
         return cmd
         
@@ -366,17 +366,17 @@ class SimulationRunner:
                 import os
                 import signal
                 
-                # Kill the entire process group (run_all.py + all its children including NS-3)
-                # This ensures NS-3 simulation is actually terminated
+                # Kill the entire process group immediately (run_all.py + all its children including NS-3)
+                # User clicked stop - they want immediate termination, not graceful shutdown
                 try:
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-                    # Wait for graceful termination
+                    # Send SIGKILL immediately to entire process group for instant termination
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                    # Brief wait to confirm termination
                     try:
-                        self.process.wait(timeout=3)
+                        self.process.wait(timeout=0.5)
                     except subprocess.TimeoutExpired:
-                        # Force kill the entire process group
-                        os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
-                        self.process.wait()
+                        # Already sent SIGKILL, process should be dead
+                        pass
                 except ProcessLookupError:
                     # Process already dead
                     pass
@@ -385,7 +385,7 @@ class SimulationRunner:
                     # Fallback: try killing just the parent process
                     try:
                         self.process.kill()
-                        self.process.wait()
+                        self.process.wait(timeout=0.5)
                     except:
                         pass
             except Exception as e:

@@ -306,7 +306,9 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
     try:
         if verbose:
             # Stream output in real-time for verbose mode
-            print("\n" + "─" * 70, flush=True)
+            print("\n" + "┌" + "─" * 68 + "┐", flush=True)
+            print("│" + " NS-3 VERBOSE OUTPUT ".center(68) + "│", flush=True)
+            print("└" + "─" * 68 + "┘", flush=True)
             # Use process group to enable killing all child processes (including NS-3)
             process = subprocess.Popen(
                 run_cmd,
@@ -319,11 +321,13 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
             )
             output_lines = []
             for line in iter(process.stdout.readline, ''):
-                print(line, end='', flush=True)  # Real-time output with forced flush
-                output_lines.append(line)
+                # Prefix each verbose line with [NS-3] for clear distinction
+                prefixed_line = f"[NS-3] {line}" if line.strip() else line
+                print(prefixed_line, end='', flush=True)  # Real-time output with forced flush
+                output_lines.append(line)  # Keep original for parsing
             process.wait()
             output = ''.join(output_lines)
-            print("─" * 70 + "\n", flush=True)
+            print("" + "─" * 70 + "\n", flush=True)
         else:
             # Quiet mode - capture output
             result = subprocess.run(

@@ -126,6 +126,12 @@
             box-shadow: 0 0 10px var(--warning-amber);
         }
         
+        .status-dot.stopping {
+            background: #ff6b35;
+            box-shadow: 0 0 10px #ff6b35;
+            animation: pulse-fast 0.5s infinite;
+        }
+        
         .status-dot.error {
             background: var(--danger-red);
             box-shadow: 0 0 10px var(--danger-red);
@@ -134,6 +140,11 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
+        }
+        
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
         }
         
         .status-text {
@@ -503,6 +514,57 @@
             overflow-y: auto;
             font-family: 'Courier New', monospace;
             font-size: 0.85rem;
+        }
+        
+        /* Split console layout for verbose mode */
+        .console-split-container {
+            display: none; /* Hidden by default */
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .console-split-container.active {
+            display: grid;
+        }
+        
+        .console-panel {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .console-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 10px 10px 0 0;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-align: center;
+            border-bottom: 2px solid #4c1d95;
+        }
+        
+        .console-header.verbose {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .console-split {
+            background: #1e293b;
+            border-radius: 0 0 10px 10px;
+            padding: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            flex: 1;
+        }
+        
+        .console.single-mode {
+            display: block;
+        }
+        
+        .console.single-mode.hidden {
+            display: none;
         }
         
         .console-line {
@@ -1049,8 +1111,25 @@
                     </button>
                 </div>
 
-                <div class="console" id="console">
+                <!-- Single console (default, non-verbose mode) -->
+                <div class="console single-mode" id="console">
                     <div class="console-line">Console output will appear here...</div>
+                </div>
+                
+                <!-- Split console (verbose mode) -->
+                <div class="console-split-container" id="consoleSplitContainer">
+                    <div class="console-panel">
+                        <div class="console-header">Summary Output</div>
+                        <div class="console-split" id="consoleNormal">
+                            <div class="console-line">Summary output will appear here...</div>
+                        </div>
+                    </div>
+                    <div class="console-panel">
+                        <div class="console-header verbose">NS-3 Verbose Output</div>
+                        <div class="console-split" id="consoleVerbose">
+                            <div class="console-line">Verbose NS-3 output will appear here...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1137,6 +1216,7 @@
         let currentTab = 'configure';
         let simulationRunning = false;
         let elapsedInterval = null;
+        let isVerboseMode = false; // Track if current simulation is in verbose mode
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
@@ -1442,6 +1522,28 @@
         async function startSimulation() {
             const params = collectParameters();
             
+            // Store verbose mode state
+            isVerboseMode = params.verbose;
+            
+            // Switch console layout based on verbose mode
+            const singleConsole = document.getElementById('console');
+            const splitContainer = document.getElementById('consoleSplitContainer');
+            
+            if (isVerboseMode) {
+                // Show split view, hide single console
+                singleConsole.classList.add('hidden');
+                splitContainer.classList.add('active');
+                // Clear both consoles
+                document.getElementById('consoleNormal').innerHTML = '';
+                document.getElementById('consoleVerbose').innerHTML = '';
+            } else {
+                // Show single console, hide split view
+                singleConsole.classList.remove('hidden');
+                splitContainer.classList.remove('active');
+                // Clear single console
+                singleConsole.innerHTML = '';
+            }
+            
             try {
                 const response = await fetch('/api/simulation/start', {
                     method: 'POST',
@@ -1478,6 +1580,13 @@
 
         // Stop simulation
         async function stopSimulation() {
+            // Immediate UI feedback - disable button and show stopping status
+            const stopBtn = document.getElementById('stopBtn');
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping...';
+            updateStatus('stopping', 'Stopping simulation...');
+            addConsole('Stop requested - terminating simulation...', 'warning');
+            
             try {
                 const response = await fetch('/api/simulation/stop', {
                     method: 'POST'
@@ -1488,13 +1597,23 @@
                 if (result.success) {
                     simulationRunning = false;
                     document.getElementById('startBtn').classList.remove('hidden');
-                    document.getElementById('stopBtn').classList.add('hidden');
+                    stopBtn.classList.add('hidden');
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = 'Stop Simulation';
                     updateStatus('ready', 'Stopped');
                     addConsole('Simulation stopped by user', 'error');
                     stopElapsedTimer();
+                } else {
+                    // Re-enable button if stop failed
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = 'Stop Simulation';
                 }
             } catch (error) {
                 console.error('Stop error:', error);
+                // Re-enable button on error
+                stopBtn.disabled = false;
+                stopBtn.textContent = 'Stop Simulation';
+                addConsole('Error stopping simulation', 'error');
             }
         }
 
@@ -1623,16 +1742,47 @@
 
         // Console management
         function clearConsole() {
-            document.getElementById('console').innerHTML = '';
+            if (isVerboseMode) {
+                // Clear both split consoles
+                const normalConsole = document.getElementById('consoleNormal');
+                const verboseConsole = document.getElementById('consoleVerbose');
+                if (normalConsole) normalConsole.innerHTML = '';
+                if (verboseConsole) verboseConsole.innerHTML = '';
+            } else {
+                // Clear single console
+                document.getElementById('console').innerHTML = '';
+            }
         }
 
-        function addConsole(message, type = '') {
-            const console = document.getElementById('console');
+        function addConsole(message, type = '', targetConsole = null) {
+            // Determine which console to use
+            let consoleElement;
+            
+            if (targetConsole) {
+                // Explicit target specified
+                consoleElement = document.getElementById(targetConsole);
+            } else if (isVerboseMode) {
+                // In verbose mode, check if message is NS-3 output
+                if (message.includes('[NS-3]')) {
+                    // Remove [NS-3] prefix and send to verbose console
+                    message = message.replace(/\[NS-3\]\s?/, '');
+                    consoleElement = document.getElementById('consoleVerbose');
+                } else {
+                    // Normal output goes to left console
+                    consoleElement = document.getElementById('consoleNormal');
+                }
+            } else {
+                // Single console mode
+                consoleElement = document.getElementById('console');
+            }
+            
+            if (!consoleElement) return;
+            
             const line = document.createElement('div');
             line.className = 'console-line' + (type ? ' ' + type : '');
             line.textContent = message;
-            console.appendChild(line);
-            console.scrollTop = console.scrollHeight;
+            consoleElement.appendChild(line);
+            consoleElement.scrollTop = consoleElement.scrollHeight;
         }
 
         // Elapsed time timer
@@ -1663,6 +1813,8 @@
             dot.className = 'status-dot';
             if (state === 'running') {
                 dot.classList.add('running');
+            } else if (state === 'stopping') {
+                dot.classList.add('stopping');
             } else if (state === 'error') {
                 dot.classList.add('error');
             }
