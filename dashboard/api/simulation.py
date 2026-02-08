@@ -117,6 +117,14 @@ class SimulationRunner:
         self.total_runs = len(protocols) * runs
         self.current_run = 0
         
+        # Build command BEFORE starting thread so it's available immediately
+        ns3_path = parameters.get('ns3_path') or self.detect_ns3_installation()
+        if ns3_path:
+            cmd = self._build_command(ns3_path, parameters)
+            self.last_command = ' '.join(cmd)
+        else:
+            self.last_command = "NS-3 installation not found"
+        
         # Start simulation in background thread
         self.is_running = True
         self.start_time = time.time()
@@ -136,17 +144,8 @@ class SimulationRunner:
                 self.is_running = False
                 return
             
-            # Build ONE command for ALL protocols
+            # Build command (should already be built in start(), but rebuild for execution)
             cmd = self._build_command(ns3_path, parameters)
-            
-            # Store command for display (ONCE at beginning)
-            self.last_command = ' '.join(cmd)
-            
-            # Emit command ONCE at the start
-            self._emit_progress('command', {
-                'command': self.last_command,
-                'display_once': True
-            })
             
             # Execute run_all.py ONCE (it handles all protocols × runs internally)
             self._execute_simulation(cmd, parameters)
@@ -182,6 +181,7 @@ class SimulationRunner:
         # Build command with ALL protocols at once
         cmd = [
             'python3',
+            '-u',  # Unbuffered output (critical for real-time updates)
             str(run_all_script),
             '--protocols',
             *protocols,  # All protocols as separate arguments
@@ -222,9 +222,9 @@ class SimulationRunner:
         # Dashboard assumes NS-3 is already built
         cmd.append('--skip-build')
             
-        # Add verbose flag if requested
-        if params.get('verbose', False):
-            cmd.append('--verbose')
+        # FORCE verbose mode for real-time output in dashboard
+        # Without this, run_all.py waits for ALL runs to complete before showing output
+        cmd.append('--verbose')
         
         return cmd
         
@@ -237,16 +237,18 @@ class SimulationRunner:
         
         # Execute run_all.py command
         try:
+            import os
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                bufsize=1,
-                cwd=str(self.scripts_dir)
+                bufsize=1,  # Line buffering
+                cwd=str(self.scripts_dir),
+                preexec_fn=os.setsid  # Create process group for proper cleanup
             )
             
-            # Read output line by line
+            # Read output line by line in real-time
             for line in self.process.stdout:
                 if not self.is_running:
                     # Force kill the process immediately
@@ -264,10 +266,12 @@ class SimulationRunner:
                 # Emit console output
                 self._emit_progress('console', {'line': line.rstrip()})
                 
-            # Wait for process to complete (with timeout of 60 seconds)
+            # Wait for process to complete (with sufficient timeout for large simulations)
+            # 150 nodes × 500s simulation can take 20-30 minutes per run
+            # Total: 25 runs × 30 min = 750 min = 45000 seconds max
             if self.is_running:
                 try:
-                    self.process.wait(timeout=60)
+                    self.process.wait(timeout=50000)  # ~14 hours max (very large simulations)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait()
@@ -359,14 +363,31 @@ class SimulationRunner:
         # Kill the current process if it exists
         if self.process and self.process.poll() is None:  # Process is still running
             try:
-                # Try graceful termination first
-                self.process.terminate()
+                import os
+                import signal
+                
+                # Kill the entire process group (run_all.py + all its children including NS-3)
+                # This ensures NS-3 simulation is actually terminated
                 try:
-                    self.process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    # Force kill if it doesn't terminate
-                    self.process.kill()
-                    self.process.wait()
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                    # Wait for graceful termination
+                    try:
+                        self.process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        # Force kill the entire process group
+                        os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                        self.process.wait()
+                except ProcessLookupError:
+                    # Process already dead
+                    pass
+                except Exception as e:
+                    print(f"Error killing process group: {e}")
+                    # Fallback: try killing just the parent process
+                    try:
+                        self.process.kill()
+                        self.process.wait()
+                    except:
+                        pass
             except Exception as e:
                 print(f"Error stopping process: {e}")
                 # Try force kill as last resort

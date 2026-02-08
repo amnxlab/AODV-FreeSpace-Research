@@ -297,31 +297,33 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         run_cmd = f'./waf --run "{PROGRAM_NAME} {ns3_args}"'
     
     # Print command for debugging
-    print("\n" + "═" * 70)
-    print("EXECUTING NS-3 COMMAND:")
-    print("═" * 70)
-    print(run_cmd)
-    print("═" * 70 + "\n")
+    print("\n" + "═" * 70, flush=True)
+    print("EXECUTING NS-3 COMMAND:", flush=True)
+    print("═" * 70, flush=True)
+    print(run_cmd, flush=True)
+    print("═" * 70 + "\n", flush=True)
     
     try:
         if verbose:
             # Stream output in real-time for verbose mode
-            print("\n" + "─" * 70)
+            print("\n" + "─" * 70, flush=True)
+            # Use process group to enable killing all child processes (including NS-3)
             process = subprocess.Popen(
                 run_cmd,
                 cwd=ns3_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                shell=True
+                shell=True,
+                preexec_fn=os.setsid  # Create new process group
             )
             output_lines = []
             for line in iter(process.stdout.readline, ''):
-                print(line, end='')  # Real-time output
+                print(line, end='', flush=True)  # Real-time output with forced flush
                 output_lines.append(line)
             process.wait()
             output = ''.join(output_lines)
-            print("─" * 70 + "\n")
+            print("─" * 70 + "\n", flush=True)
         else:
             # Quiet mode - capture output
             result = subprocess.run(
@@ -329,7 +331,7 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
                 cwd=ns3_path,
                 capture_output=True,
                 text=True,
-                timeout=900,
+                timeout=3600,  # 1 hour timeout for large simulations (150+ nodes)
                 shell=True
             )
             output = result.stdout + result.stderr
@@ -359,7 +361,7 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
                     metrics.append(f"Throughput: {throughput_kbps:.2f} kbps")
             
             if energy_match:
-                metrics.append(f"Energy: {float(energy_match.group(1)):.1f}J")
+                metrics.append(f"Energy Consumed: {float(energy_match.group(1)):.1f}J")
             
             print(f"    ✓ {' | '.join(metrics)}")
             return True

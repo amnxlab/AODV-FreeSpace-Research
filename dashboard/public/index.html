@@ -1003,7 +1003,7 @@
         <div id="execute-tab" class="tab-content">
             <!-- Command Display -->
             <div id="executedCommand" class="command-display" style="display:none;">
-                <h3><i class="fas fa-terminal"></i> 🚀 Executing run_all.py Command</h3>
+                <h3><i class="fas fa-terminal"></i> Executing run_all.py Command</h3>
                 <pre id="commandText" class="command-text"></pre>
             </div>
             
@@ -1149,6 +1149,12 @@
 
         // WebSocket initialization
         function initializeWebSocket() {
+            // Prevent duplicate socket connections
+            if (socket && socket.connected) {
+                console.log('Socket already connected');
+                return;
+            }
+            
             socket = io();
             
             socket.on('connect', () => {
@@ -1451,13 +1457,14 @@
                     document.getElementById('stopBtn').classList.remove('hidden');
                     updateStatus('running', 'Simulation Running');
                     clearConsole();
-                    addConsole('Simulation started...', 'success');
                     
-                    // Display executed command
+                    // Display executed command in command display box ONLY (not in console)
                     if (result.command) {
                         document.getElementById('executedCommand').style.display = 'block';
                         document.getElementById('commandText').textContent = result.command;
                     }
+                    
+                    addConsole('Simulation started...', 'success');
                     
                     startElapsedTimer();
                 } else {
@@ -1502,8 +1509,7 @@
                     break;
                     
                 case 'run_progress':
-                    // New event type from updated backend
-                    addConsole(`Running: ${data.protocol} | Run: ${data.run} | Overall: ${data.overall_run}/${data.total_runs}`);
+                    // Update progress tracking (don't add to console - it's already there from stdout)
                     updateProgressInfo(data.overall_run, data.total_runs, data.protocol);
                     setProgress(data.progress_percent);
                     break;
@@ -1518,12 +1524,12 @@
                     break;
                     
                 case 'console':
-                    // Filter out NS-3 command display from run_all.py output
+                    // Filter out NS-3 command display from run_all.py output (not our dashboard command)
                     const line = data.line;
                     if (line.includes('EXECUTING NS-3 COMMAND:') || 
                         line.includes('══════════════════') || 
                         line.match(/^\.\/ns3 run "manet-compare/)) {
-                        // Suppress verbose NS-3 command display
+                        // Suppress verbose NS-3 command display from run_all.py
                         return;
                     }
                     addConsole(line);

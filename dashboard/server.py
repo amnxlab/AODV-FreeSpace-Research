@@ -276,8 +276,9 @@ def handle_disconnect():
 @socketio.on('subscribe_progress')
 def handle_subscribe():
     """Subscribe to simulation progress updates"""
-    # Add callback for this client
-    simulation_runner.add_progress_callback(simulation_progress_handler)
+    # Check if callback already exists before adding to prevent duplicates
+    if simulation_progress_handler not in simulation_runner.progress_callbacks:
+        simulation_runner.add_progress_callback(simulation_progress_handler)
     emit('subscribed', {'message': 'Subscribed to progress updates'})
 
 
