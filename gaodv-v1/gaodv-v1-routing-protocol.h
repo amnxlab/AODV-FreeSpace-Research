@@ -110,13 +110,7 @@ private:
     double m_initialEnergy;      ///< Initial energy for NEF calculation
     Time m_evaluationWindow;     ///< Timer T for destination RREQ collection
     
-    /// REF calculation weights
-    double m_w1;  ///< Weight for RREQEF component
-    double m_w2;  ///< Weight for 1/distance component
-    double m_w3;  ///< Weight for 1/hopCount component
-    double m_w4;  ///< Weight for 1/delay component
-    
-    double m_propagationSpeed;   ///< Signal propagation speed (m/s)
+    // Weights removed per flowchart - path selection uses max RREQEF only
     
     //=== Standard AODV-like Parameters ===
     
@@ -281,13 +275,7 @@ private:
      */
     double ComputeNef() const;
     
-    /**
-     * \brief Compute Route Efficiency Factor (REF) for a buffered RREQ
-     * REF = w1*RREQEF + w2*(1/dist) + w3*(1/hops) + w4*(1/delay)
-     * \param entry Buffered RREQ entry
-     * \return REF value
-     */
-    double ComputeRef(const BufferedRreq& entry) const;
+    // ComputeRef removed - path selection uses RREQEF directly per flowchart
     
     /**
      * \brief Get current node's 3D position

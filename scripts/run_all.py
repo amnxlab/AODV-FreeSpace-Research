@@ -452,6 +452,8 @@ Examples:
                         help='Packet size in bytes (default: 512)')
     parser.add_argument('--packet-rate', type=int, default=4, dest='packet_rate',
                         help='Packets per second (default: 4)')
+    parser.add_argument('--ethf', type=float, default=0.2,
+                        help='Energy Threshold Factor for GAODV (default: 0.2, range 0-1)')
     
     # System options
     parser.add_argument('--ns3-path', type=Path, default=None,

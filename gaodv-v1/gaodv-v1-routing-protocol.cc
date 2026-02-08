@@ -81,27 +81,7 @@ RoutingProtocol::GetTypeId()
                           TimeValue(Seconds(2.0)),
                           MakeTimeAccessor(&RoutingProtocol::m_evaluationWindow),
                           MakeTimeChecker())
-            .AddAttribute("W1", "REF weight for RREQEF",
-                          DoubleValue(0.25),
-                          MakeDoubleAccessor(&RoutingProtocol::m_w1),
-                          MakeDoubleChecker<double>())
-            .AddAttribute("W2", "REF weight for 1/distance",
-                          DoubleValue(0.25),
-                          MakeDoubleAccessor(&RoutingProtocol::m_w2),
-                          MakeDoubleChecker<double>())
-            .AddAttribute("W3", "REF weight for 1/hopCount",
-                          DoubleValue(0.25),
-                          MakeDoubleAccessor(&RoutingProtocol::m_w3),
-                          MakeDoubleChecker<double>())
-            .AddAttribute("W4", "REF weight for 1/delay",
-                          DoubleValue(0.25),
-                          MakeDoubleAccessor(&RoutingProtocol::m_w4),
-                          MakeDoubleChecker<double>())
-            .AddAttribute("PropagationSpeed",
-                          "Signal propagation speed (m/s) - 3e8 for radio waves",
-                          DoubleValue(3.0e8),
-                          MakeDoubleAccessor(&RoutingProtocol::m_propagationSpeed),
-                          MakeDoubleChecker<double>())
+            // Weights removed per flowchart - path selection uses max RREQEF only
             // Standard AODV-like attributes
             .AddAttribute("HelloInterval",
                           "Hello interval",
@@ -162,8 +142,7 @@ RoutingProtocol::RoutingProtocol()
       m_maxRange(100.0),
       m_initialEnergy(20.0),  // Match simulation: 20J per EDA-AODV paper
       m_evaluationWindow(Seconds(2.0)),
-      m_w1(0.25), m_w2(0.25), m_w3(0.25), m_w4(0.25),
-      m_propagationSpeed(3.0e8),  // Speed of light for radio waves in free space
+      // Weights removed - path selection uses RREQEF directly per flowchart
       m_rreqRetries(2),
       m_ttlStart(1),
       m_ttlIncrement(2),
@@ -341,24 +320,7 @@ RoutingProtocol::ComputeNef() const
     return 1.0;
 }
 
-double
-RoutingProtocol::ComputeRef(const BufferedRreq& entry) const
-{
-    double rreqEf = entry.header.GetRreqEf();
-    double dist = std::max(entry.distance, 1.0);
-    double hops = std::max(static_cast<double>(entry.hopCount), 1.0);
-    double delay = dist / m_propagationSpeed;
-    delay = std::max(delay, 0.001);
-    
-    double ref = m_w1 * rreqEf +
-                 m_w2 * (1.0 / dist) +
-                 m_w3 * (1.0 / hops) +
-                 m_w4 * (1.0 / delay);
-    
-    NS_LOG_DEBUG("REF: " << ref << " (RREQEF=" << rreqEf << ", dist=" << dist 
-                 << ", hops=" << hops << ", delay=" << delay << ")");
-    return ref;
-}
+// ComputeRef removed - path selection uses RREQEF directly per flowchart
 
 Vector
 RoutingProtocol::GetPosition() const
@@ -1103,28 +1065,27 @@ RoutingProtocol::EvaluateAndSendRrep()
         return;
     }
     
-    // EDA-AODV Paper: Select path with MAXIMUM REF (Route Efficiency Factor)
-    // Flowchart: "RREP to source with high Route Efficiency Factor (REF)"
-    // REF = w1*RREQEF + w2*(1/dist) + w3*(1/hops) + w4*(1/delay)
-    double bestRef = -1.0;
+    // G-AODV Flowchart: "RREP to source with high Route Efficiency Factor (REF)"
+    // Per flowchart requirement: REF = RREQEF (minimum energy along path)
+    // Select path with MAXIMUM RREQEF (path where weakest node has highest energy)
+    double bestRreqef = -1.0;
     BufferedRreq bestEntry;
     
     for (const auto& kv : m_bufferedRreqs)
     {
-        double ref = ComputeRef(kv.second);
+        double rreqef = kv.second.header.GetRreqEf();
         NS_LOG_DEBUG("RREQ from " << kv.second.header.GetOrigin() 
-                     << " via " << kv.second.sender << " REF=" << ref
-                     << " (RREQEF=" << kv.second.header.GetRreqEf() << ")");
+                     << " via " << kv.second.sender << " RREQEF=" << rreqef);
         
-        if (ref > bestRef)
+        if (rreqef > bestRreqef)
         {
-            bestRef = ref;
+            bestRreqef = rreqef;
             bestEntry = kv.second;
         }
     }
     
-    NS_LOG_INFO("G-AODV: Selected best path with max REF: origin=" << bestEntry.header.GetOrigin()
-                << " via " << bestEntry.sender << " REF=" << bestRef);
+    NS_LOG_INFO("G-AODV: Selected best path with max RREQEF: origin=" << bestEntry.header.GetOrigin()
+                << " via " << bestEntry.sender << " RREQEF=" << bestRreqef);
     
     // Get route to origin and send RREP
     RoutingTableEntry toOrigin;

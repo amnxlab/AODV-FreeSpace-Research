@@ -207,6 +207,7 @@ python3 scripts/run_all.py [OPTIONS]
 | `--initial-energy` | 20 | `--initial-energy 15` |
 | `--packet-size` | 512 | `--packet-size 1024` |
 | `--packet-rate` | 4 | `--packet-rate 8` |
+| `--ethf` | 0.2 | `--ethf 0.3` |
 | `--txpower` | 7.5 | `--txpower 10.0` |
 
 ### RF/Wireless Parameters
@@ -237,8 +238,8 @@ Based on **Table 1** from the EDA-AODV paper:
 | Initial Energy | **20 J** | `--initial-energy 20` |
 | Packet Size | **512 B** | `--packet-size 512` |
 | Packet Rate | **4 pkt/s** | `--packet-rate 4` |
-| Energy Threshold (ETHF) | **10%** | (code: Ethf=0.1) |
-| Alpha (α) | **0.6** | (code: Alpha=0.6) |
+| Energy Threshold (ETHF) | **20%** | `--ethf 0.2` |
+| Alpha (α) | **0.6** | (code: Alpha=0.6, range 0.4-0.8) |
 | MAC Layer | 802.11a | (hardcoded) |
 | TX Range | **100 m** | `--txRange 100` |
 
@@ -285,8 +286,8 @@ The implementation follows the G-AODV flowchart exactly:
 │ 8. 1st RREQ message? → Start Timer T                            │
 │ 9. Set reverse path for each RREQ received                      │
 │ 10. Timer expired?                                              │
-│     └─ YES → Select path with maximum RREQEF                    │
-│              Send RREP to source                                │
+│     └─ YES → Select path with highest RREQEF (max energy)      │
+│              Send RREP to source via best path                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -300,10 +301,10 @@ $$\text{RREQEF}^{\text{new}} = \min(\text{RREQEF}^{\text{current}}, \text{NEF}_{
 
 > Only updated when `NEF < RREQEF` (node has less energy than path minimum)
 
-#### Best Path Selection (EDA-AODV Paper)
+#### Path Selection at Destination (Per Flowchart)
 $$\text{Best Path} = \arg\max_{\text{paths}}(\text{RREQEF})$$
 
-> "choose the path of maximum RqEF" - selects the path where the weakest node has the highest energy, maximizing route lifetime
+> **Simplified per flowchart:** Destination selects the path with **maximum RREQEF** - the path where the weakest node has the highest remaining energy. No weighted calculation needed.
 
 #### Energy Threshold Check
 $$\text{NEF}_{\text{node}} \geq \text{ETHF}$$

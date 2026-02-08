@@ -123,14 +123,9 @@ private:
     uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
     double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
 
-    // NS-3 SimpleDeviceEnergyModel - doesn't conflict with WiFi PHY
+    // WifiRadioEnergyModel tracks actual PHY state energy consumption
     EnergySourceContainer m_energySources;
     DeviceEnergyModelContainer m_deviceEnergyModels;
-    
-    // Energy parameters calibrated for EDA-AODV paper: 20J initial, 500s simulation
-    // Power = 20J / 500s = 0.04W, Current = 0.04W / 3.3V = 12mA
-    const double m_avgCurrentA = 0.012;         // 12mA average current (20J lasts 500s)
-    const double m_supplyVoltage = 3.3;         // 3.3V supply voltage
 
     // Metrics
     std::vector<double> m_initialEnergy;
@@ -308,7 +303,7 @@ ManetCompare1::Run()
     // Current calibrated so 20J lasts full 500s simulation (12mA @ 3.3V = 0.04W)
     BasicEnergySourceHelper energyHelper;
     energyHelper.Set("BasicEnergySourceInitialEnergyJ", DoubleValue(m_initialEnergyJ));
-    energyHelper.Set("BasicEnergySupplyVoltageV", DoubleValue(m_supplyVoltage));
+    energyHelper.Set("BasicEnergySupplyVoltageV", DoubleValue(3.3));  // 3.3V supply
     m_energySources = energyHelper.Install(adhocNodes);
 
     // 📶 Wi-Fi setup - EXACT MATCH to working AODV test (bug-772.cc / aodv-regression.cc)
