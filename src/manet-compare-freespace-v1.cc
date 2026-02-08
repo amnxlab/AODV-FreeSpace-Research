@@ -122,6 +122,10 @@ private:
     double m_initialEnergyJ{20.0};  // Initial energy per node in Joules (paper: 20J)
     uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
     double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
+    
+    // Run tracking for session-based CSV output
+    uint32_t m_runNumber{1};        // Current run number (1-indexed)
+    std::string m_sessionId{""};    // Session ID for grouping runs
 
     // WifiRadioEnergyModel tracks actual PHY state energy consumption
     EnergySourceContainer m_energySources;
@@ -229,6 +233,8 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("initialEnergy", "Initial energy per node in Joules", m_initialEnergyJ);
     cmd.AddValue("packetSize", "Packet size in bytes", m_packetSize);
     cmd.AddValue("packetRate", "Packets per second", m_packetRate);
+    cmd.AddValue("runNumber", "Run number for this experiment (1-indexed)", m_runNumber);
+    cmd.AddValue("sessionId", "Session ID for grouping results", m_sessionId);
     cmd.Parse(argc, argv);
 
     std::vector<std::string> allowedProtocols{"OLSR", "AODV", "DSDV", "DSR", "GAODV"};
@@ -537,26 +543,41 @@ ManetCompare1::Run()
     std::cout << "Total Residual Energy: " << totalFinalEnergy << " J" << std::endl;
     std::cout << "Average per node: " << (energyConsumed / m_energySources.GetN()) << " J" << std::endl;
 
-    // Export results to CSV with timestamp for separate per-run files
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
-    char timestamp[20];
-    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
-    std::string resultsFile = "results_" + m_protocolName + "_" + timestamp + ".csv";
+    // Export results to CSV - session-based per-protocol files
+    // Each protocol gets one CSV per session with all runs in one table
+    std::string resultsFile;
+    if (!m_sessionId.empty())
+    {
+        // Session mode: one CSV per protocol per session
+        resultsFile = "results_" + m_protocolName + "_session_" + m_sessionId + ".csv";
+    }
+    else
+    {
+        // Legacy mode: timestamped per-run files
+        time_t now = time(nullptr);
+        struct tm* timeinfo = localtime(&now);
+        char timestamp[20];
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
+        resultsFile = "results_" + m_protocolName + "_" + timestamp + ".csv";
+    }
+    
+    // Check if file exists to determine if header is needed
+    bool fileExists = std::ifstream(resultsFile).good();
     std::ofstream csv(resultsFile, std::ios::app);
     
     // Write header if file is new
-    csv.seekp(0, std::ios::end);
-    if (csv.tellp() == 0)
+    if (!fileExists)
     {
-        csv << "protocol,nodes,simtime,txPower,packetsSent,packetsReceived,pdr,"
+        csv << "run,protocol,nodes,simtime,txPower,txRange,packetsSent,packetsReceived,pdr,"
             << "initialEnergy,consumedEnergy,residualEnergy" << std::endl;
     }
     
-    csv << m_protocolName << ","
+    csv << m_runNumber << ","
+        << m_protocolName << ","
         << nWifis << ","
         << TotalTime << ","
         << m_txp << ","
+        << m_txRange << ","
         << g_totalSentPackets << ","
         << uniqueReceived << ","
         << pdr << ","
@@ -565,7 +586,7 @@ ManetCompare1::Run()
         << totalFinalEnergy << std::endl;
     
     csv.close();
-    std::cout << "\nResults saved to: " << resultsFile << std::endl;
+    std::cout << "\nResults saved to: " << resultsFile << " (Run " << m_runNumber << ")" << std::endl;
     std::cout << "========================\n" << std::endl;
 
     Simulator::Destroy();

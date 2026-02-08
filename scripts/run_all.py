@@ -245,6 +245,11 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
     # Build NS-3 command arguments
     ns3_args = f"--protocol={protocol} --nWifis={nodes} --txpower={txpower}"
     
+    # Add run tracking for session-based CSV output
+    if sim_args.get('session_id'):
+        ns3_args += f" --sessionId={sim_args['session_id']}"
+    ns3_args += f" --runNumber={run_number}"
+    
     # Add optional simulation parameters from EDA-AODV paper
     if sim_args.get('simtime'):
         ns3_args += f" --totalTime={sim_args['simtime']}"
@@ -347,6 +352,10 @@ def run_experiments(args):
     successful = 0
     failed = 0
     
+    # Generate session ID for this batch of experiments
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"Session ID: {session_id}\n")
+    
     # Build simulation arguments dictionary
     sim_args = {
         'simtime': args.simtime,
@@ -355,6 +364,7 @@ def run_experiments(args):
         'packet_size': args.packet_size,
         'packet_rate': args.packet_rate,
         'txrange': args.txrange[0] if args.txrange else 100.0,  # Use first txrange value
+        'session_id': session_id,  # Add session ID for CSV grouping
     }
     
     for i, (protocol, nodes, txpower, run) in enumerate(experiments, 1):

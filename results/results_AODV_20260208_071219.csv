@@ -1,2 +1,0 @@
-protocol,nodes,simtime,txPower,packetsSent,packetsReceived,pdr,initialEnergy,consumedEnergy,residualEnergy
-AODV,100,500,7.5,19575,19575,1,2000,1790.92,209.083
