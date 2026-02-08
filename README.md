@@ -11,6 +11,25 @@ Implementation of **GAODV (Geometric and Energy-Aware AODV)** based on the **EDA
 
 ---
 
+> [!CAUTION]
+> ## ⚠️ Critical: TX Range Must Exceed Node Spacing!
+> 
+> The simulation uses a **linear grid topology with 120m node spacing**. For packets to be delivered:
+> 
+> | TX Range | Result |
+> |----------|--------|
+> | `--txrange 100` (default) | ❌ **0% PDR** - nodes cannot communicate |
+> | `--txrange 150` or higher | ✅ **100% PDR** - full connectivity |
+> 
+> **Always use `--txrange 150` or higher for meaningful results!**
+> 
+> ```bash
+> # Correct usage
+> python3 scripts/run_all.py --protocols GAODV AODV --txrange 150 --runs 5
+> ```
+
+---
+
 ## 📋 Table of Contents
 
 1. [Quick Start](#-quick-start)
