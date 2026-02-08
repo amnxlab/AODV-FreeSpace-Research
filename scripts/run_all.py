@@ -371,11 +371,11 @@ def run_experiments(args):
     print(f"{'='*70}\n")
 
 
-# ========== RESULT AGGREGATION ==========
-def aggregate_results(args):
-    """Aggregate protocol CSV files into a single master CSV."""
+# ========== RESULT COLLECTION ==========
+def collect_results(args):
+    """Move individual result CSV files to results folder (no aggregation)."""
     print(f"\n{'='*70}")
-    print(f"AGGREGATING RESULTS")
+    print(f"COLLECTING RESULTS")
     print(f"{'='*70}\n")
     
     results_dir = PROJECT_DIR / "results"
@@ -385,33 +385,29 @@ def aggregate_results(args):
     result_files = list(args.ns3_path.glob("results_*.csv"))
     
     if not result_files:
-        print("No result files found to aggregate.")
+        print("No result files found to collect.")
         print(f"Searched in: {args.ns3_path}")
         return
     
-    # Aggregate all results
-    aggregated_file = results_dir / "aggregated_results.csv"
-    
-    with open(aggregated_file, 'w') as outfile:
-        header_written = False
+    # Move each result file to results folder (preserving individual files)
+    moved_count = 0
+    for result_file in result_files:
+        dest_file = results_dir / result_file.name
         
-        for result_file in result_files:
-            print(f"  Adding: {result_file.name}")
-            with open(result_file, 'r') as infile:
-                lines = infile.readlines()
-                if not lines:
-                    continue
-                
-                # Write header from first file only
-                if not header_written:
-                    outfile.write(lines[0])
-                    header_written = True
-                
-                # Write data lines (skip header)
-                for line in lines[1:]:
-                    outfile.write(line)
+        # If file already exists, add counter to avoid overwrite
+        if dest_file.exists():
+            base = result_file.stem
+            ext = result_file.suffix
+            counter = 1
+            while dest_file.exists():
+                dest_file = results_dir / f"{base}_{counter}{ext}"
+                counter += 1
+        
+        shutil.move(str(result_file), str(dest_file))
+        print(f"  ✓ {result_file.name} → results/{dest_file.name}")
+        moved_count += 1
     
-    print(f"\n✓ Aggregated results saved to: {aggregated_file}")
+    print(f"\n✓ Collected {moved_count} result file(s) to: {results_dir}")
     print(f"{'='*70}\n")
 
 
@@ -464,8 +460,8 @@ Examples:
                         help='Path to simulation source file')
     parser.add_argument('--skip-build', action='store_true',
                         help='Skip building NS-3 (assumes already built)')
-    parser.add_argument('--no-aggregate', action='store_true',
-                        help='Skip result aggregation')
+    parser.add_argument('--no-collect', action='store_true',
+                        help='Skip collecting result files to results folder')
     
     args = parser.parse_args()
     
@@ -500,9 +496,9 @@ Examples:
     start_time = time.time()
     run_experiments(args)
     
-    # Aggregate results
-    if not args.no_aggregate:
-        aggregate_results(args)
+    # Collect results (move individual files to results folder)
+    if not args.no_collect:
+        collect_results(args)
     
     elapsed_time = time.time() - start_time
     print(f"Total execution time: {elapsed_time:.2f} seconds")

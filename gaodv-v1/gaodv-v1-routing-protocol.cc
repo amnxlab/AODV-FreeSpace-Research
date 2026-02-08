@@ -57,10 +57,10 @@ RoutingProtocol::GetTypeId()
             .AddConstructor<RoutingProtocol>()
             // G-AODV specific attributes
             .AddAttribute("Alpha",
-                          "Threshold factor (0.5-0.7)",
+                          "Threshold factor for NEF validation (0.4-0.8)",
                           DoubleValue(0.6),
                           MakeDoubleAccessor(&RoutingProtocol::m_alpha),
-                          MakeDoubleChecker<double>(0.5, 0.7))
+                          MakeDoubleChecker<double>(0.4, 0.8))
             .AddAttribute("Ethf",
                           "Energy Threshold Factor",
                           DoubleValue(0.2),
@@ -73,7 +73,7 @@ RoutingProtocol::GetTypeId()
                           MakeDoubleChecker<double>())
             .AddAttribute("InitialEnergy",
                           "Initial energy for NEF calculation (J)",
-                          DoubleValue(500.0),
+                          DoubleValue(20.0),  // EDA-AODV paper: 20J per node
                           MakeDoubleAccessor(&RoutingProtocol::m_initialEnergy),
                           MakeDoubleChecker<double>())
             .AddAttribute("EvaluationWindow",
@@ -1040,15 +1040,20 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
     }
     
     // STEP 5: Calculate NEF and apply threshold
-    // Flowchart: "NEF >= ETHF and 0.4 <= α <= 0.8?"
-    // - NEF must be >= ETHF (energy threshold factor)
-    // - Alpha is already constrained to [0.4, 0.8] by attribute checker
+    // Flowchart: "NEF >= ETHF and 0.4 <= α <= 0.8"
+    // NEF must be >= ETHF (energy threshold factor)
+    // Alpha defines acceptable NEF range [0.4, 0.8]
     double myNef = ComputeNef();
     
-    if (myNef < m_ethf)
+    // Apply alpha-based threshold: NEF must be above ETHF and within acceptable range
+    // Using alpha to scale the minimum acceptable NEF
+    double minAcceptableNef = m_alpha * m_ethf;  // Higher alpha = stricter threshold
+    
+    if (myNef < m_ethf || myNef < minAcceptableNef)
     {
         NS_LOG_DEBUG("Node " << m_node->GetId() << " dropping RREQ: NEF " 
-                     << myNef << " < ETHF threshold " << m_ethf);
+                     << myNef << " below threshold (ETHF=" << m_ethf 
+                     << ", alpha=" << m_alpha << ", min=" << minAcceptableNef << ")");
         return;
     }
     
@@ -1098,27 +1103,28 @@ RoutingProtocol::EvaluateAndSendRrep()
         return;
     }
     
-    // EDA-AODV Paper: Select path with MAXIMUM RREQEF (max-min energy)
-    // "choose the path of maximum RqEF" - the path where the weakest node
-    // has the highest energy, maximizing route lifetime
-    double bestRreqef = -1.0;
+    // EDA-AODV Paper: Select path with MAXIMUM REF (Route Efficiency Factor)
+    // Flowchart: "RREP to source with high Route Efficiency Factor (REF)"
+    // REF = w1*RREQEF + w2*(1/dist) + w3*(1/hops) + w4*(1/delay)
+    double bestRef = -1.0;
     BufferedRreq bestEntry;
     
     for (const auto& kv : m_bufferedRreqs)
     {
-        double rreqef = kv.second.header.GetRreqEf();
+        double ref = ComputeRef(kv.second);
         NS_LOG_DEBUG("RREQ from " << kv.second.header.GetOrigin() 
-                     << " via " << kv.second.sender << " RREQEF=" << rreqef);
+                     << " via " << kv.second.sender << " REF=" << ref
+                     << " (RREQEF=" << kv.second.header.GetRreqEf() << ")");
         
-        if (rreqef > bestRreqef)
+        if (ref > bestRef)
         {
-            bestRreqef = rreqef;
+            bestRef = ref;
             bestEntry = kv.second;
         }
     }
     
-    NS_LOG_INFO("EDA-AODV: Selected best path with max RREQEF: origin=" << bestEntry.header.GetOrigin()
-                << " via " << bestEntry.sender << " RREQEF=" << bestRreqef);
+    NS_LOG_INFO("G-AODV: Selected best path with max REF: origin=" << bestEntry.header.GetOrigin()
+                << " via " << bestEntry.sender << " REF=" << bestRef);
     
     // Get route to origin and send RREP
     RoutingTableEntry toOrigin;

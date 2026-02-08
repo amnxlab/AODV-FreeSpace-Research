@@ -13,6 +13,7 @@
 #include "ns3/applications-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/energy-module.h"
+#include "ns3/wifi-radio-energy-model-helper.h"  // For WiFi PHY state-based energy tracking
 #include "ns3/gaodv-v1-helper.h"   // ← GAODV helper (V1)
 #include "ns3/aodv-module.h"       // ← AODV support
 #include "ns3/olsr-module.h"
@@ -25,6 +26,7 @@
 #include <vector>
 #include <algorithm>
 #include <sstream>
+#include <ctime>  // For timestamped result files
 
 using namespace ns3;
 
@@ -338,19 +340,18 @@ ManetCompare1::Run()
     Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/Phy/PhyTxBegin", MakeCallback(&PhyTxTrace));
     Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/Phy/PhyRxEnd", MakeCallback(&PhyRxOkTrace));
 
-    // 🔋 SimpleDeviceEnergyModel - doesn't hook into WiFi PHY, so no conflicts!
-    // Set a constant current draw to model average WiFi consumption
-    for (uint32_t i = 0; i < adhocNodes.GetN(); ++i)
-    {
-        Ptr<SimpleDeviceEnergyModel> deviceModel = CreateObject<SimpleDeviceEnergyModel>();
-        deviceModel->SetEnergySource(m_energySources.Get(i));
-        deviceModel->SetNode(adhocNodes.Get(i));
-        // Average current: ~100mA for WiFi (mix of idle/TX/RX states)
-        // This gives ~0.33W power consumption (100mA × 3.3V)
-        deviceModel->SetCurrentA(m_avgCurrentA);
-        m_energySources.Get(i)->AppendDeviceEnergyModel(deviceModel);
-        m_deviceEnergyModels.Add(deviceModel);
-    }
+    // 🔋 WifiRadioEnergyModel - tracks actual TX/RX/Idle power consumption per WiFi PHY state
+    // This connects to WiFi PHY state machine for accurate energy tracking
+    // Does NOT affect routing behavior - only observes consumption
+    WifiRadioEnergyModelHelper radioEnergyHelper;
+    // Typical 802.11a power consumption values (based on Atheros AR5414 datasheet)
+    radioEnergyHelper.Set("TxCurrentA", DoubleValue(0.380));    // 380mA when transmitting
+    radioEnergyHelper.Set("RxCurrentA", DoubleValue(0.313));    // 313mA when receiving  
+    radioEnergyHelper.Set("IdleCurrentA", DoubleValue(0.273));  // 273mA when idle
+    radioEnergyHelper.Set("SleepCurrentA", DoubleValue(0.033)); // 33mA when sleeping
+    radioEnergyHelper.Set("CcaBusyCurrentA", DoubleValue(0.273)); // CCA busy same as idle
+    radioEnergyHelper.Set("SwitchingCurrentA", DoubleValue(0.273)); // Switching same as idle
+    m_deviceEnergyModels = radioEnergyHelper.Install(adhocDevices, m_energySources);
 
     // 🚶 Mobility - STATIC for initial testing (grid positioning)
     MobilityHelper mobilityAdhoc;
@@ -418,10 +419,7 @@ ManetCompare1::Run()
         gaodv.Set("MaxRange", DoubleValue(250.0));  // Paper: 250m transmission range
         gaodv.Set("InitialEnergy", DoubleValue(m_initialEnergyJ));  // Match simulation energy
         gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));
-        gaodv.Set("W1", DoubleValue(0.25));
-        gaodv.Set("W2", DoubleValue(0.25));
-        gaodv.Set("W3", DoubleValue(0.25));
-        gaodv.Set("W4", DoubleValue(0.25));
+        // Note: W1-W4 weights use GAODV defaults (0.25 each) - not hardcoded here
         list.Add(gaodv, 100);
         internet.SetRoutingHelper(list);
         internet.Install(adhocNodes);
@@ -544,8 +542,12 @@ ManetCompare1::Run()
     std::cout << "Total Residual Energy: " << totalFinalEnergy << " J" << std::endl;
     std::cout << "Average per node: " << (energyConsumed / m_energySources.GetN()) << " J" << std::endl;
 
-    // Export results to CSV
-    std::string resultsFile = "results_" + m_protocolName + ".csv";
+    // Export results to CSV with timestamp for separate per-run files
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    char timestamp[20];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
+    std::string resultsFile = "results_" + m_protocolName + "_" + timestamp + ".csv";
     std::ofstream csv(resultsFile, std::ios::app);
     
     // Write header if file is new
