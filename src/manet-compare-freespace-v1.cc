@@ -105,7 +105,7 @@ private:
     uint32_t packetsSent{0};  // Total packets sent by sources
 
     std::string m_CSVfileName{"manet-compare-1.csv"};
-    int m_nSinks{10};  // Number of sink nodes (receivers) - default 10 for 50-node simulation
+    int m_nSinks{1};  // Number of sink nodes (receivers) - default 1
     int m_nWifis{50};  // Number of total nodes - default 50
     double m_totalTime{500.0};  // Simulation duration in seconds - default 500s
     std::string m_protocolName{"GAODV"};
@@ -116,8 +116,8 @@ private:
     bool m_flowMonitor{false};
     
     // EDA-AODV Paper Parameters
-    double m_areaWidth{800.0};   // Simulation area width in meters (paper: 800m)
-    double m_areaHeight{400.0};  // Simulation area height in meters (paper: 400m)
+    double m_areaWidth{800.0};   // Simulation area width (X-dimension) in meters (paper: 800m)
+    double m_areaHeight{400.0};  // Simulation area length (Y-dimension) in meters (paper: 400m)
     double m_minSpeed{5.0};      // Minimum node speed in m/s (paper: 5 m/s)
     double m_maxSpeed{55.0};     // Maximum node speed in m/s (paper: 55 m/s)
     double m_pauseTime{50.0};    // Pause time in seconds (paper: 50-500s)
@@ -129,6 +129,10 @@ private:
     double m_idleCurrentA{0.0273};   // Idle current in Amps (27.3mA - 10x reduced from Atheros AR5414)
     double m_rxCurrentA{0.0313};     // RX current in Amps (31.3mA)
     double m_txCurrentBaseA{0.010};  // Base TX current in Amps (10mA, plus power-dependent component)
+    
+    // GAODV-specific Parameters
+    double m_ethf{0.1};              // Energy Threshold Factor (0-1, default 0.1)
+    double m_maxRange{250.0};        // Maximum transmission range in meters (default 250m)
     
     // Run tracking for session-based CSV output
     uint32_t m_runNumber{1};        // Current run number (1-indexed)
@@ -233,8 +237,8 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("txRange", "Transmission range in meters", m_txRange);
     cmd.AddValue("nodeSpacing", "Distance between nodes in grid (meters)", m_nodeSpacing);
     // EDA-AODV Paper Parameters
-    cmd.AddValue("areaWidth", "Simulation area width in meters", m_areaWidth);
-    cmd.AddValue("areaHeight", "Simulation area height in meters", m_areaHeight);
+    cmd.AddValue("areaWidth", "Simulation area width (X-dimension) in meters", m_areaWidth);
+    cmd.AddValue("areaHeight", "Simulation area length (Y-dimension) in meters", m_areaHeight);
     cmd.AddValue("minSpeed", "Minimum node speed in m/s", m_minSpeed);
     cmd.AddValue("maxSpeed", "Maximum node speed in m/s", m_maxSpeed);
     cmd.AddValue("pauseTime", "Pause time in seconds", m_pauseTime);
@@ -245,6 +249,9 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("idleCurrent", "Idle current in Amps (default: 0.0273 = 27.3mA)", m_idleCurrentA);
     cmd.AddValue("rxCurrent", "RX current in Amps (default: 0.0313 = 31.3mA)", m_rxCurrentA);
     cmd.AddValue("txCurrentBase", "Base TX current in Amps (default: 0.010 = 10mA)", m_txCurrentBaseA);
+    // GAODV-specific Parameters
+    cmd.AddValue("ethf", "Energy Threshold Factor (0-1, default: 0.1)", m_ethf);
+    cmd.AddValue("maxRange", "Maximum transmission range in meters (default: 250.0)", m_maxRange);
     cmd.AddValue("runNumber", "Run number for this experiment (1-indexed)", m_runNumber);
     cmd.AddValue("sessionId", "Session ID for grouping results", m_sessionId);
     cmd.Parse(argc, argv);
@@ -332,6 +339,8 @@ ManetCompare1::Run()
     YansWifiPhyHelper wifiPhy;
     wifiPhy.DisablePreambleDetectionModel();  // CRITICAL: Must be before SetChannel
     wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
+    wifiPhy.Set("TxPowerStart", DoubleValue(m_txp));  // Set TX power for energy model
+    wifiPhy.Set("TxPowerEnd", DoubleValue(m_txp));    // Match energy consumption calculation
     
     // Configure propagation model with desired transmission range
     YansWifiChannelHelper wifiChannel;
@@ -369,14 +378,21 @@ ManetCompare1::Run()
     double rxPowerConsumption = m_rxCurrentA * supplyVoltage;     // Watts
     double idlePowerConsumption = m_idleCurrentA * supplyVoltage; // Watts
     
-    // Calculate estimated node lifetime (at idle)
+    // Calculate estimated node lifetime (at idle - unrealistic upper bound)
     double nodeLifetimeAtIdle = m_initialEnergyJ / idlePowerConsumption;  // seconds
+    
+    // More realistic estimate with typical RX/TX duty cycle
+    // Assume: 40% idle, 35% RX, 25% TX (based on MANET with 4 pkt/s traffic)
+    double avgPowerConsumption = (0.40 * idlePowerConsumption + 
+                                   0.35 * rxPowerConsumption + 
+                                   0.25 * txPowerConsumption);
+    double realisticNodeLifetime = m_initialEnergyJ / avgPowerConsumption;  // seconds
     double totalNetworkEnergy = m_initialEnergyJ * nWifis;  // Joules
     
     // Print nice energy model summary
     std::cout << std::endl;
     std::cout << "╔══════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║              🔋 ENERGY MODEL CONFIGURATION                   ║" << std::endl;
+    std::cout << "║                 ENERGY MODEL CONFIGURATION                   ║" << std::endl;
     std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
     std::cout << "║  Initial Energy:     " << std::fixed << std::setprecision(1) << std::setw(8) << m_initialEnergyJ << " J per node                    ║" << std::endl;
     std::cout << "║  Total Network:      " << std::setw(8) << totalNetworkEnergy << " J (" << nWifis << " nodes)                  ║" << std::endl;
@@ -395,14 +411,18 @@ ManetCompare1::Run()
     std::cout << "║    TX Power:         " << std::setw(8) << std::setprecision(4) << txPowerConsumption << " W                              ║" << std::endl;
     std::cout << "║    RX Power:         " << std::setw(8) << rxPowerConsumption << " W                              ║" << std::endl;
     std::cout << "║    Idle Power:       " << std::setw(8) << idlePowerConsumption << " W                              ║" << std::endl;
+    std::cout << "║    Avg Power (est):  " << std::setw(8) << avgPowerConsumption << " W (40% idle, 35% RX, 25% TX)   ║" << std::endl;
     std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║  ⏱️  NODE LIFETIME ESTIMATE:                                  ║" << std::endl;
-    std::cout << "║    At Idle:          " << std::setw(8) << std::setprecision(1) << nodeLifetimeAtIdle << " seconds                        ║" << std::endl;
-    std::cout << "║    Formula: E / (I × V) = " << m_initialEnergyJ << "J / (" << m_idleCurrentA << "A × 3.3V)       ║" << std::endl;
-    if (nodeLifetimeAtIdle < m_totalTime) {
-        std::cout << "║  ⚠️  WARNING: Node may deplete before sim ends (" << m_totalTime << "s)!      ║" << std::endl;
+    std::cout << "║  NODE LIFETIME ESTIMATES:                                    ║" << std::endl;
+    std::cout << "║    Realistic (RX/TX): " << std::setw(7) << std::setprecision(0) << realisticNodeLifetime << " seconds                        ║" << std::endl;
+    std::cout << "║    Idle-only (max):   " << std::setw(7) << std::setprecision(0) << nodeLifetimeAtIdle << " seconds                        ║" << std::endl;
+    std::cout << "║    Formula: E / (I × V) = " << m_initialEnergyJ << "J / (Iavg × 3.3V)       ║" << std::endl;
+    if (realisticNodeLifetime < m_totalTime) {
+        std::cout << "║  WARNING: Nodes may deplete before sim ends (" << m_totalTime << "s)!       ║" << std::endl;
+    } else if (realisticNodeLifetime < m_totalTime * 1.2) {
+        std::cout << "║  CAUTION: Node lifetime is close to sim time (" << m_totalTime << "s)       ║" << std::endl;
     } else {
-        std::cout << "║  ✓  OK: Nodes will survive full simulation (" << m_totalTime << "s)          ║" << std::endl;
+        std::cout << "║  OK: Nodes should survive full simulation (" << m_totalTime << "s)          ║" << std::endl;
     }
     std::cout << "╚══════════════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
@@ -480,8 +500,8 @@ ManetCompare1::Run()
         
         // EDA-AODV Paper: ETHF = 10% of initial energy, Alpha = 0.6
         gaodv.Set("Alpha", DoubleValue(0.6));
-        gaodv.Set("Ethf", DoubleValue(0.1));  // Paper: 10% energy threshold
-        gaodv.Set("MaxRange", DoubleValue(250.0));  // Paper: 250m transmission range
+        gaodv.Set("Ethf", DoubleValue(m_ethf));  // Energy Threshold Factor (configurable)
+        gaodv.Set("MaxRange", DoubleValue(m_maxRange));  // Maximum transmission range (configurable)
         gaodv.Set("InitialEnergy", DoubleValue(m_initialEnergyJ));  // Match simulation energy
         gaodv.Set("EvaluationWindow", TimeValue(Seconds(1.0)));
         // Note: W1-W4 weights use GAODV defaults (0.25 each) - not hardcoded here

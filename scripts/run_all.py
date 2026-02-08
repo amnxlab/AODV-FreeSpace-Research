@@ -273,12 +273,35 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         ns3_args += f" --rxCurrent={sim_args['rx_current']}"
     if sim_args.get('tx_current_base'):
         ns3_args += f" --txCurrentBase={sim_args['tx_current_base']}"
+    # GAODV-specific parameters
+    if sim_args.get('ethf'):
+        ns3_args += f" --ethf={sim_args['ethf']}"
+    if sim_args.get('max_range'):
+        ns3_args += f" --maxRange={sim_args['max_range']}"
+    # Mobility and area parameters
+    if sim_args.get('area_width'):
+        ns3_args += f" --areaWidth={sim_args['area_width']}"
+    if sim_args.get('area_height'):
+        ns3_args += f" --areaHeight={sim_args['area_height']}"
+    if sim_args.get('min_speed'):
+        ns3_args += f" --minSpeed={sim_args['min_speed']}"
+    if sim_args.get('max_speed'):
+        ns3_args += f" --maxSpeed={sim_args['max_speed']}"
+    if sim_args.get('pause_time'):
+        ns3_args += f" --pauseTime={sim_args['pause_time']}"
     
     # Determine run command - use string for shell=True
     if (ns3_path / "ns3").exists():
         run_cmd = f'./ns3 run "{PROGRAM_NAME} {ns3_args}"'
     else:
         run_cmd = f'./waf --run "{PROGRAM_NAME} {ns3_args}"'
+    
+    # Print command for debugging
+    print("\n" + "═" * 70)
+    print("EXECUTING NS-3 COMMAND:")
+    print("═" * 70)
+    print(run_cmd)
+    print("═" * 70 + "\n")
     
     try:
         if verbose:
@@ -490,16 +513,30 @@ Examples:
     # EDA-AODV Paper Simulation Parameters (Table 1)
     parser.add_argument('--simtime', type=int, default=500,
                         help='Simulation time in seconds (default: 500)')
-    parser.add_argument('--sinks', type=int, default=10,
-                        help='Number of sink nodes (default: 10)')
+    parser.add_argument('--sinks', type=int, default=1,
+                        help='Number of sink nodes (default: 1)')
     parser.add_argument('--initial-energy', type=float, default=20.0, dest='initial_energy',
                         help='Initial energy per node in Joules (default: 20)')
     parser.add_argument('--packet-size', type=int, default=512, dest='packet_size',
                         help='Packet size in bytes (default: 512)')
     parser.add_argument('--packet-rate', type=int, default=4, dest='packet_rate',
                         help='Packets per second (default: 4)')
-    parser.add_argument('--ethf', type=float, default=0.2,
-                        help='Energy Threshold Factor for GAODV (default: 0.2, range 0-1)')
+    parser.add_argument('--ethf', type=float, default=0.1,
+                        help='Energy Threshold Factor for GAODV (default: 0.1, range 0-1)')
+    parser.add_argument('--max-range', type=float, default=250.0, dest='max_range',
+                        help='Maximum transmission range for GAODV in meters (default: 250.0)')
+    
+    # Mobility and Area Parameters
+    parser.add_argument('--area-width', type=float, default=800.0, dest='area_width',
+                        help='Simulation area width (X-dimension) in meters (default: 800)')
+    parser.add_argument('--area-height', type=float, default=400.0, dest='area_height',
+                        help='Simulation area length (Y-dimension) in meters (default: 400)')
+    parser.add_argument('--min-speed', type=float, default=5.0, dest='min_speed',
+                        help='Minimum node speed in m/s (default: 5)')
+    parser.add_argument('--max-speed', type=float, default=55.0, dest='max_speed',
+                        help='Maximum node speed in m/s (default: 55)')
+    parser.add_argument('--pause-time', type=float, default=50.0, dest='pause_time',
+                        help='Pause time in seconds (default: 50)')
     
     # Energy Model Parameters (for tuning battery life)
     parser.add_argument('--idle-current', type=float, default=0.0273, dest='idle_current',

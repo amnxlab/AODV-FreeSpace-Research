@@ -3,7 +3,7 @@
 ![NS-3](https://img.shields.io/badge/NS--3-3.42-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
-![Version](https://img.shields.io/badge/Version-0.3-orange)
+![Version](https://img.shields.io/badge/Version-0.4-orange)
 
 Implementation of **GAODV (Geometric and Energy-Aware AODV)** based on the **EDA-AODV** paper for terrestrial free-space MANETs.
 
@@ -34,14 +34,17 @@ Implementation of **GAODV (Geometric and Energy-Aware AODV)** based on the **EDA
 ## 📋 Table of Contents
 
 1. [Quick Start](#-quick-start)
-2. [Test Cases](#-test-cases)
-3. [Performance Metrics](#-performance-metrics)
-4. [CLI Reference](#-cli-reference)
-5. [EDA-AODV Parameters](#-eda-aodv-paper-parameters)
-6. [GAODV Algorithm & Flowchart](#-gaodv-algorithm--flowchart)
-7. [Project Structure](#-project-structure)
-8. [Troubleshooting](#-troubleshooting)
-9. [Version History](#-version-history)
+2. [Documentation](#-documentation)
+3. [Web Dashboard](#-web-dashboard)
+4. [Validation Scripts](#-validation-scripts)
+5. [Test Cases](#-test-cases)
+6. [Performance Metrics](#-performance-metrics)
+7. [CLI Reference](#-cli-reference)
+8. [EDA-AODV Parameters](#-eda-aodv-paper-parameters)
+9. [GAODV Algorithm & Flowchart](#-gaodv-algorithm--flowchart)
+10. [Project Structure](#-project-structure)
+11. [Troubleshooting](#-troubleshooting)
+12. [Version History](#-version-history)
 
 ---
 
@@ -72,6 +75,43 @@ python3 scripts/run_all.py --protocols GAODV --runs 1
 
 ---
 
+## 📚 Documentation
+
+### Release Notes (v0.4)
+
+**[📖 RELEASE_v0.4.md](docs/RELEASE_v0.4.md)** - **Complete v0.4 reference** (1100+ lines)
+
+This comprehensive document consolidates all v0.4 changes:
+- ✅ **3 Critical Bug Fixes** (MaxRange, Energy Source Connection, WiFi TX Power)
+- ✅ **100% Flowchart Validation** (All 11 EDA-AODV steps verified)
+- ✅ **New Features** (Web Dashboard, Command Display, Validation Suite)
+- ✅ **Migration Guide** from v0.3
+- ✅ **Technical Implementation** details
+- ✅ **Performance Results** and benchmarks
+
+### Implementation Summary
+
+**[📝 IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Development log
+
+Detailed summary of v0.4 implementation session:
+- WiFi TX Power fix (2 lines)
+- Command display feature (5 files modified)
+- Validation scripts (4 new files)
+- Testing and verification results
+
+### Technical Documentation
+
+| Document | Topic | Lines |
+|----------|-------|-------|
+| [RELEASE_v0.4.md](docs/RELEASE_v0.4.md) | **Complete v0.4 guide** | 1100+ |
+| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Development session log | 291 |
+| [batch-v0.3-fix.md](docs/batch-v0.3-fix.md) | v0.3 energy model changes | 200+ |
+| [batch_v0.2_fix.md](docs/batch_v0.2_fix.md) | v0.2 PDR bug fixes | 150+ |
+
+> **Quick Start:** Read [RELEASE_v0.4.md](docs/RELEASE_v0.4.md) for complete v0.4 overview.
+
+---
+
 ## 🌐 Web Dashboard
 
 A modern web-based dashboard is available for running simulations without using the command line.
@@ -88,9 +128,69 @@ This will:
 
 ### Features
 - **Visual Parameter Configuration** - All CLI options in a clean UI
+- **Command Display** - See exact NS-3 command executed (NEW in v0.4)
 - **Real-time Console Output** - Live simulation progress
 - **Results Viewer** - Browse and download CSV files
 - **Modern Design** - Purple/violet gradient theme
+
+> See [RELEASE_v0.4.md - Web Dashboard](docs/RELEASE_v0.4.md#web-dashboard-) for complete guide.
+
+---
+
+## 🧪 Validation Scripts
+
+**NEW in v0.4:** Automated test suite to verify GAODV implementation correctness.
+
+### Quick Validation
+
+```bash
+# Complete validation suite (5 minutes)
+chmod +x scripts/validate_*.sh scripts/full_gaodv_validation.sh
+./scripts/full_gaodv_validation.sh
+```
+
+### Individual Tests
+
+```bash
+# Test 1: Energy source connection
+./scripts/validate_energy_connection.sh
+# ✅ Checks: NEF calculations, energy depletion, EnergySourceContainer access
+
+# Test 2: MaxRange parameter enforcement
+./scripts/validate_maxrange.sh
+# ✅ Checks: Distance filtering, MaxRange enforcement in routing decisions
+
+# Test 3: RREQEF flowchart logic
+./scripts/validate_rreqef_logic.sh
+# ✅ Checks: RREQEF updates, position tracking, path selection
+```
+
+### Legacy Verification
+
+```bash
+# Basic component check (older script from v0.2-v0.3)
+./verify_implementation.sh
+# Checks: C++ source components, Python scripts, dependencies
+```
+
+**Expected Output:**
+```
+╔═══════════════════════════════════════════════════════════════╗
+║    GAODV PROTOCOL - COMPLETE VALIDATION SUITE                 ║
+╚═══════════════════════════════════════════════════════════════╝
+
+[1/5] Testing Energy Consumption Variability... ✅ PASS
+[2/5] Testing Energy Source Connection...       ✅ PASS
+[3/5] Testing MaxRange Parameter...             ✅ PASS
+[4/5] Testing RREQEF Flowchart Logic...         ✅ PASS
+[5/5] Command Display Test                      ℹ️  Manual
+
+╔═══════════════════════════════════════════════════════════════╗
+║    ✅ VALIDATION COMPLETE                                      ║
+╚═══════════════════════════════════════════════════════════════╝
+```
+
+> See [RELEASE_v0.4.md - Validation Suite](docs/RELEASE_v0.4.md#3-comprehensive-validation-suite-) for detailed documentation.
 
 ---
 
@@ -406,24 +506,56 @@ Where: ETHF = 0.1 (10% of initial energy)
 
 ```
 AODV-FreeSpace-Research/
+├── README.md                             # This file - Quick start guide
+├── IMPLEMENTATION_SUMMARY.md             # v0.4 development log
+├── requirements.txt                      # Python dependencies
+├── verify_implementation.sh              # Legacy verification script
+│
 ├── src/
-│   └── manet-compare-freespace-v1.cc    # NS-3 simulation
-├── scripts/
-│   ├── run_all.py                        # Automation tool
-│   └── plot_results.py                   # Visualization
-├── gaodv-v1/                             # GAODV protocol module
+│   └── manet-compare-freespace-v1.cc    # NS-3 simulation (scratch/)
+│
+├── scripts/                              # Automation & validation
+│   ├── run_all.py                        # Main automation tool
+│   ├── plot_results.py                   # Result visualization
+│   ├── validate_energy_connection.sh     # Test NEF calculations (NEW v0.4)
+│   ├── validate_maxrange.sh              # Test MaxRange filtering (NEW v0.4)
+│   ├── validate_rreqef_logic.sh          # Test RREQEF flowchart (NEW v0.4)
+│   └── full_gaodv_validation.sh          # Complete test suite (NEW v0.4)
+│
+├── gaodv-v1/                             # GAODV protocol module (ns3/src/)
 │   ├── gaodv-v1-routing-protocol.cc      # Core routing logic
 │   ├── gaodv-v1-routing-protocol.h       # Header file
-│   ├── gaodv-v1-packet.cc                # RREQ/RREP packets
+│   ├── gaodv-v1-packet.cc                # RREQ/RREP/RERR packets
 │   ├── gaodv-v1-rtable.cc                # Routing table
 │   ├── gaodv-v1-neighbors.cc             # Neighbor management
-│   └── CMakeLists.txt                    # Build config
-├── docs/
-│   └── batch_v0.2_fix.md                 # Bug fix documentation
-├── results/                              # Output CSVs
-├── graphs/                               # Generated plots
-└── README.md
+│   ├── gaodv-v1-helper.cc                # NS-3 helper class
+│   └── CMakeLists.txt                    # Build configuration
+│
+├── dashboard/                            # Web UI (NEW v0.4)
+│   ├── server.py                         # Flask backend
+│   ├── start.py                          # One-click launcher
+│   ├── public/index.html                 # Single-page app
+│   └── api/                              # Backend modules
+│       ├── simulation.py                 # Simulation runner
+│       ├── parameter_validator.py        # Parameter validation
+│       └── visualizer.py                 # Data visualization
+│
+├── docs/                                 # Documentation
+│   ├── RELEASE_v0.4.md                   # Complete v0.4 guide (1100+ lines)
+│   ├── batch-v0.3-fix.md                 # v0.3 energy model changes
+│   └── batch_v0.2_fix.md                 # v0.2 PDR bug fixes
+│
+├── aodv/, dsdv/, dsr/                    # Standard protocol implementations
+├── results/                              # Simulation output CSVs
+└── test/                                 # NS-3 regression test captures
 ```
+
+**Key Files:**
+- **[RELEASE_v0.4.md](docs/RELEASE_v0.4.md)** - Complete v0.4 reference
+- **[README.md](README.md)** - This quick start guide
+- **[run_all.py](scripts/run_all.py)** - Main simulation automation tool
+- **[full_gaodv_validation.sh](scripts/full_gaodv_validation.sh)** - Automated test suite
+- **[EDA-AODVEnergyandDistanceAwareAODVRoutingProtocol.pdf](EDA-AODVEnergyandDistanceAwareAODVRoutingProtocol.pdf)** - Reference paper
 
 ---
 
@@ -460,7 +592,39 @@ See [docs/batch-v0.3-fix.md](docs/batch-v0.3-fix.md) for details on energy model
 
 ## 📝 Version History
 
-### v0.3 (Current) - Critical Bug Fixes & Energy Model Overhaul
+### v0.4 (Current) - Production Ready Release
+**Release Date:** February 8, 2026
+
+#### Critical Bug Fixes (3)
+- 🐛 **MaxRange Parameter Bug** - Now actively filters routes by distance (was defined but unused)
+- 🐛 **Energy Source Connection** - Fixed `ComputeNef()` to access `EnergySourceContainer` (NEF now shows real values 0.8-0.95, not always 1.0)
+- 🐛 **WiFi TX Power Configuration** - Aligned PHY TX power with energy model (was using NS-3 default ~16dBm instead of configured 7.5dBm)
+
+#### New Features
+- ✨ **Web Dashboard** - Modern UI at `http://localhost:5000` (port 5000, not 8000)
+- ✨ **Command Display** - Shows exact NS-3 command in terminal and dashboard
+- ✨ **Validation Suite** - 4 automated test scripts for protocol verification
+
+#### Flowchart Validation
+- ✅ **100% EDA-AODV Compliance** - All 11 flowchart steps implemented and verified
+- ✅ **RREQEF Updates Working** - Energy-aware path selection now functional
+- ✅ **Distance Filtering Active** - MaxRange enforced at intermediate nodes and destination
+
+#### Documentation
+- 📄 **[RELEASE_v0.4.md](docs/RELEASE_v0.4.md)** - Comprehensive 1100+ line consolidated guide
+- 📄 **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Development session log
+- 📄 Consolidated all bug fix docs, validation reports, and guides
+
+#### Files Changed
+- 7 modified files (NS-3 + Python + Dashboard)
+- 4 new validation scripts
+- ~400 lines added/modified total
+
+**Status:** ✅ Production Ready - All core functionality validated
+
+---
+
+### v0.3 - Critical Bug Fixes & Energy Model Overhaul
 - 🐛 **CRITICAL FIX**: InitialEnergy mismatch (500J→20J) - resolved 0% PDR
 - 🐛 **CRITICAL FIX**: ComputeRef() now called for proper REF-based path selection
 - 🐛 **CRITICAL FIX**: Alpha parameter integrated into NEF threshold

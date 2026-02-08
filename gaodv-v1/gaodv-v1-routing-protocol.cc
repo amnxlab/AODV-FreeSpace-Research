@@ -10,8 +10,10 @@
 #include "gaodv-v1-routing-protocol.h"
 
 #include "ns3/adhoc-wifi-mac.h"
+#include "ns3/basic-energy-source.h"
 #include "ns3/boolean.h"
 #include "ns3/double.h"
+#include "ns3/energy-source-container.h"
 #include "ns3/energy-source.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-l3-protocol.h"
@@ -26,6 +28,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 // NS-3 version compatibility: In NS-3 3.42+, energy classes are in ns3::energy namespace
 // In older versions, they are directly in ns3 namespace
@@ -308,15 +311,50 @@ RoutingProtocol::SetIpv4(Ptr<Ipv4> ipv4)
 double
 RoutingProtocol::ComputeNef() const
 {
-    Ptr<EnergySource> energySrc = m_node->GetObject<EnergySource>();
+    // Try to get energy source from node
+    // In NS-3, energy sources are stored in an EnergySourceContainer aggregated to the node
+    Ptr<EnergySource> energySrc;
+    
+   // Method 1: Try to get EnergySourceContainer (NS-3 3.42+ pattern)
+    Ptr<EnergySourceContainer> container = m_node->GetObject<EnergySourceContainer>();
+    if (container && container->GetN() > 0)
+    {
+        energySrc = container->Get(0);  // Get first energy source
+    }
+    
+    // Method 2: Try direct GetObject (fallback for different NS-3 configurations)
+    if (!energySrc)
+    {
+        energySrc = m_node->GetObject<EnergySource>();
+    }
+    
+    // Method 3: Try with energy namespace
+    if (!energySrc)
+    {
+        energySrc = m_node->GetObject<energy::BasicEnergySource>();
+    }
+    
+    // Method 4: Try BasicEnergySource directly
+    if (!energySrc)
+    {
+        energySrc = m_node->GetObject<BasicEnergySource>();
+    }
+    
     if (energySrc)
     {
         double residual = energySrc->GetRemainingEnergy();
-        double nef = residual / m_initialEnergy;
-        NS_LOG_DEBUG("Node " << m_node->GetId() << " NEF: " << nef);
+        double initial = energySrc->GetInitialEnergy();
+        
+        // Calculate NEF using energy source's initial energy (more accurate) 
+        double nef = (initial > 0) ? (residual / initial) : (residual / m_initialEnergy);
+        
+        NS_LOG_DEBUG("Node " << m_node->GetId() 
+                     << " NEF: " << nef 
+                     << " (Remaining: " << residual << "J, Initial: " << initial << "J)");
         return nef;
     }
-    NS_LOG_WARN("No EnergySource on node " << m_node->GetId() << ". Assuming NEF=1.0");
+    
+    NS_LOG_WARN("No EnergySource on node " << m_node->GetId() <<  ". Assuming NEF=1.0");
     return 1.0;
 }
 
@@ -902,6 +940,22 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         return;
     }
     
+    // G-AODV: Distance check - "Distance & NEF CALCULATION"
+    // Drop RREQ if previous hop is beyond max transmission range
+    Vector myPos = GetPosition();
+    Vector prevHopPos = rreq.GetPosition();
+    double distance = CalculateDistance(myPos, prevHopPos);
+    
+    if (distance > m_maxRange)
+    {
+        NS_LOG_DEBUG("Node " << m_node->GetId() << " dropping RREQ: previous hop at distance "
+                     << distance << "m exceeds MaxRange " << m_maxRange << "m");
+        return;
+    }
+    
+    NS_LOG_DEBUG("RREQ from previous hop at distance " << distance << "m (within MaxRange " 
+                 << m_maxRange << "m)");
+    
     // Increment hop count
     uint8_t hopCount = rreq.GetHopCount() + 1;
     rreq.SetHopCount(hopCount);
@@ -1068,24 +1122,70 @@ RoutingProtocol::EvaluateAndSendRrep()
     // G-AODV Flowchart: "RREP to source with high Route Efficiency Factor (REF)"
     // Per flowchart requirement: REF = RREQEF (minimum energy along path)
     // Select path with MAXIMUM RREQEF (path where weakest node has highest energy)
+    // Use distance as secondary criterion (prefer shorter paths when RREQEF similar)
     double bestRreqef = -1.0;
+    double bestDistance = std::numeric_limits<double>::max();
     BufferedRreq bestEntry;
+    const double RREQEF_EPSILON = 0.05;  // 5% difference considered "similar"
     
     for (const auto& kv : m_bufferedRreqs)
     {
-        double rreqef = kv.second.header.GetRreqEf();
-        NS_LOG_DEBUG("RREQ from " << kv.second.header.GetOrigin() 
-                     << " via " << kv.second.sender << " RREQEF=" << rreqef);
+        const BufferedRreq& candidate = kv.second;
+        double rreqef = candidate.header.GetRreqEf();
+        double distance = candidate.distance;
         
-        if (rreqef > bestRreqef)
+        // Filter: Drop paths where last hop exceeds MaxRange
+        if (distance > m_maxRange)
+        {
+            NS_LOG_DEBUG("Filtering RREQ from " << candidate.header.GetOrigin() 
+                         << ": last hop distance " << distance << "m exceeds MaxRange " 
+                         << m_maxRange << "m");
+            continue;
+        }
+        
+        NS_LOG_DEBUG("RREQ from " << candidate.header.GetOrigin() 
+                     << " via " << candidate.sender 
+                     << " RREQEF=" << rreqef 
+                     << " distance=" << distance << "m");
+        
+        // Primary criterion: Higher RREQEF is better
+        bool isBetter = false;
+        if (rreqef > bestRreqef * (1.0 + RREQEF_EPSILON))
+        {
+            // Significantly better RREQEF
+            isBetter = true;
+        }
+        else if (std::abs(rreqef - bestRreqef) <= bestRreqef * RREQEF_EPSILON)
+        {
+            // RREQEF values are similar - use distance as tiebreaker
+            if (distance < bestDistance)
+            {
+                isBetter = true;
+                NS_LOG_DEBUG("Similar RREQEF (" << rreqef << " ~= " << bestRreqef 
+                             << "), preferring shorter distance (" << distance 
+                             << "m < " << bestDistance << "m)");
+            }
+        }
+        
+        if (isBetter)
         {
             bestRreqef = rreqef;
-            bestEntry = kv.second;
+            bestDistance = distance;
+            bestEntry = candidate;
         }
     }
     
+    if (bestRreqef < 0)
+    {
+        NS_LOG_WARN("No valid RREQ paths found (all exceeded MaxRange)");
+        m_bufferedRreqs.clear();
+        return;
+    }
+    
     NS_LOG_INFO("G-AODV: Selected best path with max RREQEF: origin=" << bestEntry.header.GetOrigin()
-                << " via " << bestEntry.sender << " RREQEF=" << bestRreqef);
+                << " via " << bestEntry.sender 
+                << " RREQEF=" << bestRreqef 
+                << " distance=" << bestDistance << "m");
     
     // Get route to origin and send RREP
     RoutingTableEntry toOrigin;
