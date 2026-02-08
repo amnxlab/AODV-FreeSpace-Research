@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAODV Dashboard</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg-secondary: #12121a;
+            --panel: rgba(20, 18, 35, 0.95);
+            --accent: #a855f7;
+            --accent-light: #c084fc;
+            --accent-glow: rgba(168, 85, 247, 0.4);
+            --success: #22c55e;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+            --border: rgba(168, 85, 247, 0.25);
+            --border-light: rgba(168, 85, 247, 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            background: var(--bg);
+            background-image: 
+                radial-gradient(ellipse at 20% 0%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1500px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1.4fr;
+            gap: 24px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 24px 0 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 12px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 50%, #e879f9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            margin-top: 6px;
+        }
+
+        .left-column { display: flex; flex-direction: column; gap: 16px; }
+        .right-column { 
+            display: flex; 
+            flex-direction: column; 
+            position: sticky; 
+            top: 20px; 
+            height: fit-content;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card:hover { border-color: var(--border); }
+
+        .section-title {
+            color: var(--accent-light);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title::after {
+            content: "";
+            height: 1px;
+            flex-grow: 1;
+            background: linear-gradient(90deg, var(--border), transparent);
+        }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        
+        .input-group label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
+        input, select {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        input::placeholder { color: var(--text-dim); opacity: 0.5; }
+
+        /* Protocol Pills */
+        .protocol-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .protocol-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.8rem;
+        }
+
+        .protocol-pill:hover { border-color: var(--accent); }
+        
+        .protocol-pill:has(input:checked) {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: var(--accent);
+            color: var(--accent-light);
+        }
+
+        .protocol-pill input { display: none; }
+
+        /* Buttons */
+        .btn {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #7c3aed);
+            color: white;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--error), #dc2626);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--accent-light);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(168, 85, 247, 0.1);
+            border-color: var(--accent);
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .actions .btn-primary { flex-grow: 1; }
+
+        /* Console */
+        .console {
+            background: #080810;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            min-height: 500px;
+            max-height: 680px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .console::-webkit-scrollbar { width: 6px; }
+        .console::-webkit-scrollbar-track { background: transparent; }
+        .console::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .console-line { margin-bottom: 1px; white-space: pre-wrap; word-break: break-all; }
+        .console-line.success { color: var(--success); }
+        .console-line.error { color: var(--error); }
+        .console-line.info { color: var(--accent-light); }
+        .console-line.dim { color: var(--text-dim); }
+        .console-line.title { color: var(--accent); font-weight: 600; margin-top: 8px; }
+
+        .status-bar {
+            margin-top: 12px;
+            font-size: 0.7rem;
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-dim);
+            padding: 0 4px;
+        }
+
+        #statusText.running { color: var(--success); font-weight: 600; }
+
+        /* Info Tags */
+        .info-tag {
+            display: inline-block;
+            background: rgba(168, 85, 247, 0.1);
+            color: var(--accent-light);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            margin-left: 6px;
+        }
+
+        /* Checkbox Groups */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .checkbox-group:hover { background: rgba(168, 85, 247, 0.1); }
+        .checkbox-group input[type="checkbox"] { accent-color: var(--accent); }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            margin: 3% auto;
+            padding: 30px;
+            width: 90%;
+            max-width: 1200px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+        }
+
+        .close-modal {
+            position: absolute;
+            right: 25px;
+            top: 20px;
+            font-size: 28px;
+            color: var(--accent-light);
+            cursor: pointer;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .modal-header h2 {
+            color: var(--accent-light);
+            font-size: 1.25rem;
+        }
+
+        /* Results Grid */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .result-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .result-item:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .result-item .name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+
+        .result-item .meta {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: var(--text-dim);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .container { grid-template-columns: 1fr; }
+            .right-column { position: static; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>⚡ GAODV Simulation Dashboard</h1>
+        <p>Energy-Aware Routing Protocol Comparison & Analysis</p>
+    </header>
+
+    <div class="container">
+        <!-- LEFT COLUMN -->
+        <div class="left-column">
+            <!-- Protocols -->
+            <div class="card">
+                <div class="section-title">Protocols</div>
+                <div class="protocol-grid">
+                    <label class="protocol-pill"><input type="checkbox" name="protocol" value="GAODV" checked> GAODV</label>
+                    <label class="protocol-pill"><input type="checkbox" name="protocol" value="AODV" checked> AODV</label>
+                    <label class="protocol-pill"><input type="checkbox" name="protocol" value="OLSR"> OLSR</label>
+                    <label class="protocol-pill"><input type="checkbox" name="protocol" value="DSDV"> DSDV</label>
+                    <label class="protocol-pill"><input type="checkbox" name="protocol" value="DSR"> DSR</label>
+                </div>
+                <div class="grid-3" style="margin-top: 16px;">
+                    <div class="input-group">
+                        <label>Nodes</label>
+                        <input type="number" id="nodes" value="30">
+                    </div>
+                    <div class="input-group">
+                        <label>Sinks</label>
+                        <input type="number" id="sinks" value="10">
+                    </div>
+                    <div class="input-group">
+                        <label>Runs</label>
+                        <input type="number" id="runs" value="3">
+                    </div>
+                </div>
+            </div>
+
+            <!-- RF/Wireless -->
+            <div class="card">
+                <div class="section-title">RF / Wireless Parameters</div>
+                <div class="grid-3">
+                    <div class="input-group">
+                        <label>TX Range (m)</label>
+                        <input type="number" id="txRange" value="150" step="10">
+                    </div>
+                    <div class="input-group">
+                        <label>Node Spacing (m)</label>
+                        <input type="number" id="nodeSpacing" value="50" step="5">
+                    </div>
+                    <div class="input-group">
+                        <label>TX Power (dBm)</label>
+                        <input type="number" id="txPower" value="7.5" step="0.5">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Energy Model -->
+            <div class="card">
+                <div class="section-title">Energy Model <span class="info-tag">Battery Life</span></div>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Initial Energy (J)</label>
+                        <input type="number" id="initialEnergy" value="20" step="5">
+                    </div>
+                    <div class="input-group">
+                        <label>Idle Current (A)</label>
+                        <input type="number" id="idleCurrent" value="0.0273" step="0.001">
+                    </div>
+                    <div class="input-group">
+                        <label>RX Current (A)</label>
+                        <input type="number" id="rxCurrent" value="0.0313" step="0.001">
+                    </div>
+                    <div class="input-group">
+                        <label>TX Current Base (A)</label>
+                        <input type="number" id="txCurrentBase" value="0.010" step="0.001">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation -->
+            <div class="card">
+                <div class="section-title">Simulation Parameters</div>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Sim Time (s)</label>
+                        <input type="number" id="simtime" value="500" step="50">
+                    </div>
+                    <div class="input-group">
+                        <label>Packet Size (B)</label>
+                        <input type="number" id="packetSize" value="512" step="64">
+                    </div>
+                    <div class="input-group">
+                        <label>Packet Rate (pkt/s)</label>
+                        <input type="number" id="packetRate" value="4" step="1">
+                    </div>
+                    <div class="input-group">
+                        <label>ETHF (GAODV)</label>
+                        <input type="number" id="ethf" value="0.2" step="0.05" min="0" max="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flags & Actions -->
+            <div class="card">
+                <div class="section-title">System Flags</div>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <label class="checkbox-group"><input type="checkbox" id="skipBuild"> Skip Build</label>
+                    <label class="checkbox-group"><input type="checkbox" id="noCollect"> No Collect</label>
+                </div>
+                <div class="actions">
+                    <button id="runBtn" class="btn btn-primary">▶ Run Simulation</button>
+                    <button id="stopBtn" class="btn btn-danger" style="display: none;">⏹ Abort</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="right-column">
+            <div class="card" style="flex-grow: 1;">
+                <div class="section-title">Console Output</div>
+                <div class="console" id="console">
+                    <div class="console-line dim">> System ready. Configure parameters and click Run.</div>
+                </div>
+                <div class="status-bar">
+                    <div>API: <span id="apiStatus">checking...</span></div>
+                    <div id="statusText">IDLE</div>
+                </div>
+            </div>
+            <button onclick="openResults()" class="btn btn-secondary" style="width: 100%; margin-top: 12px;">
+                📊 View Results
+            </button>
+        </div>
+    </div>
+
+    <!-- Results Modal -->
+    <div id="resultsModal" class="modal">
+        <div class="modal-content" style="position: relative;">
+            <span class="close-modal" onclick="closeResults()">&times;</span>
+            <div class="modal-header">
+                <h2>📊 Simulation Results</h2>
+            </div>
+            <div id="resultsContent" class="results-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const consoleEl = document.getElementById('console');
+        const runBtn = document.getElementById('runBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusText = document.getElementById('statusText');
+        const apiStatus = document.getElementById('apiStatus');
+
+        let pollTimer = null;
+        let lineCount = 0;
+
+        // Check API status
+        async function checkAPI() {
+            try {
+                const res = await fetch(`${API}/status`);
+                if (res.ok) {
+                    apiStatus.textContent = 'connected';
+                    apiStatus.style.color = '#22c55e';
+                    const data = await res.json();
+                    if (data.running) {
+                        setRunning(true);
+                        startPolling();
+                    }
+                }
+            } catch (e) {
+                apiStatus.textContent = 'offline';
+                apiStatus.style.color = '#ef4444';
+            }
+        }
+
+        // Polling for output
+        function startPolling() {
+            if (pollTimer) return;
+            pollTimer = setInterval(pollOutput, 500);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        async function pollOutput() {
+            try {
+                const res = await fetch(`${API}/output?since=${lineCount}`);
+                const data = await res.json();
+                
+                data.lines.forEach(line => {
+                    appendLine(line);
+                });
+                lineCount = data.total;
+
+                if (!data.running) {
+                    setRunning(false);
+                    stopPolling();
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        function appendLine(text) {
+            const line = document.createElement('div');
+            line.className = 'console-line';
+            
+            if (text.includes('✓') || text.includes('SUCCESS') || text.includes('completed')) {
+                line.classList.add('success');
+            } else if (text.includes('✗') || text.includes('ERROR') || text.includes('error')) {
+                line.classList.add('error');
+            } else if (text.includes('Running:') || text.includes('▶')) {
+                line.classList.add('info');
+            } else if (text.startsWith('─') || text.startsWith('=')) {
+                line.classList.add('title');
+            }
+            
+            line.textContent = text;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function clearConsole() {
+            consoleEl.innerHTML = '';
+            lineCount = 0;
+        }
+
+        function setRunning(running) {
+            if (running) {
+                runBtn.disabled = true;
+                runBtn.textContent = '⏳ Running...';
+                stopBtn.style.display = 'block';
+                statusText.textContent = 'RUNNING';
+                statusText.classList.add('running');
+            } else {
+                runBtn.disabled = false;
+                runBtn.textContent = '▶ Run Simulation';
+                stopBtn.style.display = 'none';
+                statusText.textContent = 'IDLE';
+                statusText.classList.remove('running');
+            }
+        }
+
+        // Get form values
+        function getParams() {
+            const protocols = Array.from(document.querySelectorAll('input[name="protocol"]:checked'))
+                                   .map(cb => cb.value);
+            return {
+                protocols,
+                nodes: parseInt(document.getElementById('nodes').value),
+                sinks: parseInt(document.getElementById('sinks').value),
+                runs: parseInt(document.getElementById('runs').value),
+                txRange: parseFloat(document.getElementById('txRange').value),
+                nodeSpacing: parseFloat(document.getElementById('nodeSpacing').value),
+                txPower: parseFloat(document.getElementById('txPower').value),
+                initialEnergy: parseFloat(document.getElementById('initialEnergy').value),
+                idleCurrent: parseFloat(document.getElementById('idleCurrent').value),
+                rxCurrent: parseFloat(document.getElementById('rxCurrent').value),
+                txCurrentBase: parseFloat(document.getElementById('txCurrentBase').value),
+                simtime: parseInt(document.getElementById('simtime').value),
+                packetSize: parseInt(document.getElementById('packetSize').value),
+                packetRate: parseInt(document.getElementById('packetRate').value),
+                ethf: parseFloat(document.getElementById('ethf').value),
+                skipBuild: document.getElementById('skipBuild').checked,
+                noCollect: document.getElementById('noCollect').checked
+            };
+        }
+
+        // Run simulation
+        runBtn.addEventListener('click', async () => {
+            const params = getParams();
+            
+            if (params.protocols.length === 0) {
+                alert('Please select at least one protocol');
+                return;
+            }
+
+            clearConsole();
+            
+            try {
+                const res = await fetch(`${API}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    setRunning(true);
+                    startPolling();
+                } else {
+                    appendLine(`ERROR: ${data.error}`);
+                }
+            } catch (e) {
+                appendLine(`ERROR: ${e.message}`);
+            }
+        });
+
+        // Stop simulation
+        stopBtn.addEventListener('click', async () => {
+            try {
+                await fetch(`${API}/stop`, { method: 'POST' });
+            } catch (e) {
+                console.error('Stop error:', e);
+            }
+        });
+
+        // Results modal
+        function openResults() {
+            document.getElementById('resultsModal').style.display = 'block';
+            loadResults();
+        }
+
+        function closeResults() {
+            document.getElementById('resultsModal').style.display = 'none';
+        }
+
+        async function loadResults() {
+            const content = document.getElementById('resultsContent');
+            content.innerHTML = '<div class="empty-state"><div class="icon">⏳</div>Loading...</div>';
+            
+            try {
+                const res = await fetch(`${API}/folders`);
+                const data = await res.json();
+                
+                if (data.folders.length === 0) {
+                    content.innerHTML = '<div class="empty-state"><div class="icon">📭</div>No results yet</div>';
+                    return;
+                }
+
+                content.innerHTML = data.folders.map(f => `
+                    <div class="result-item" onclick="downloadResult('${f.name}')">
+                        <div class="name">📄 ${f.name}</div>
+                        <div class="meta">${(f.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                content.innerHTML = '<div class="empty-state"><div class="icon">❌</div>Failed to load</div>';
+            }
+        }
+
+        function downloadResult(name) {
+            window.open(`${API}/result/${name}`, '_blank');
+        }
+
+        // Close modal on outside click
+        window.onclick = (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.style.display = 'none';
+            }
+        };
+
+        // Initialize
+        checkAPI();
+        setInterval(checkAPI, 10000);
+    </script>
+</body>
+</html>

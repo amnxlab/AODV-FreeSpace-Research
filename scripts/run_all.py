@@ -229,7 +229,7 @@ def setup_simulation(ns3_path, source_file, copy_gaodv=False):
 
 
 # ========== EXPERIMENT EXECUTION ==========
-def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_args):
+def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_args, verbose=False):
     """Run a single simulation experiment.
     
     Args:
@@ -239,6 +239,7 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         txpower: TX power
         run_number: Run number
         sim_args: Dictionary of additional simulation arguments
+        verbose: If True, stream NS-3 output to console
     """
     print(f"  Running: {protocol} | Nodes: {nodes} | TxPower: {txpower} | Run: {run_number}")
     
@@ -263,6 +264,15 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         ns3_args += f" --packetRate={sim_args['packet_rate']}"
     if sim_args.get('txrange'):
         ns3_args += f" --txRange={sim_args['txrange']}"
+    if sim_args.get('node_spacing'):
+        ns3_args += f" --nodeSpacing={sim_args['node_spacing']}"
+    # Energy model parameters
+    if sim_args.get('idle_current'):
+        ns3_args += f" --idleCurrent={sim_args['idle_current']}"
+    if sim_args.get('rx_current'):
+        ns3_args += f" --rxCurrent={sim_args['rx_current']}"
+    if sim_args.get('tx_current_base'):
+        ns3_args += f" --txCurrentBase={sim_args['tx_current_base']}"
     
     # Determine run command - use string for shell=True
     if (ns3_path / "ns3").exists():
@@ -271,19 +281,39 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         run_cmd = f'./waf --run "{PROGRAM_NAME} {ns3_args}"'
     
     try:
-        result = subprocess.run(
-            run_cmd,
-            cwd=ns3_path,
-            capture_output=True,
-            text=True,
-            timeout=900,  # 15 minute timeout (simulations can run 500+ seconds)
-            shell=True
-        )
+        if verbose:
+            # Stream output in real-time for verbose mode
+            print("\n" + "─" * 70)
+            process = subprocess.Popen(
+                run_cmd,
+                cwd=ns3_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                shell=True
+            )
+            output_lines = []
+            for line in iter(process.stdout.readline, ''):
+                print(line, end='')  # Real-time output
+                output_lines.append(line)
+            process.wait()
+            output = ''.join(output_lines)
+            print("─" * 70 + "\n")
+        else:
+            # Quiet mode - capture output
+            result = subprocess.run(
+                run_cmd,
+                cwd=ns3_path,
+                capture_output=True,
+                text=True,
+                timeout=900,
+                shell=True
+            )
+            output = result.stdout + result.stderr
         
         # Parse metrics from output (check both stdout and stderr as NS-3 logs to stderr)
         # NOTE: NS-3 often returns SIGSEGV (245/11) during Simulator::Destroy() cleanup
         # even when simulation completed successfully. Check for actual results instead.
-        output = result.stdout + result.stderr
         pdr_match = re.search(r'PDR:\s+([\d.]+)%', output)
         sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
         recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
@@ -363,13 +393,17 @@ def run_experiments(args):
         'initial_energy': args.initial_energy,
         'packet_size': args.packet_size,
         'packet_rate': args.packet_rate,
-        'txrange': args.txrange[0] if args.txrange else 100.0,  # Use first txrange value
+        'txrange': args.txrange[0] if args.txrange else 150.0,  # Use first txrange value
+        'node_spacing': args.node_spacing,  # Distance between nodes in grid
+        'idle_current': args.idle_current,
+        'rx_current': args.rx_current,
+        'tx_current_base': args.tx_current_base,
         'session_id': session_id,  # Add session ID for CSV grouping
     }
     
     for i, (protocol, nodes, txpower, run) in enumerate(experiments, 1):
         print(f"[{i}/{len(experiments)}]", end=" ")
-        if run_single_experiment(args.ns3_path, protocol, nodes, txpower, run, sim_args):
+        if run_single_experiment(args.ns3_path, protocol, nodes, txpower, run, sim_args, verbose=args.verbose):
             successful += 1
         else:
             failed += 1
@@ -446,8 +480,10 @@ Examples:
                         help='Number of nodes to test (default: 50 per EDA-AODV paper)')
     parser.add_argument('--txpower', nargs='+', type=float, default=[7.5],
                         help='Transmission power values (dBm)')
-    parser.add_argument('--txrange', nargs='+', type=float, default=[100.0],
-                        help='Transmission range in meters (default: 100)')
+    parser.add_argument('--txrange', nargs='+', type=float, default=[150.0],
+                        help='Transmission range in meters (default: 150)')
+    parser.add_argument('--node-spacing', type=float, default=50.0, dest='node_spacing',
+                        help='Distance between nodes in grid (meters, default: 50)')
     parser.add_argument('--runs', type=int, default=5,
                         help='Number of runs per configuration')
     
@@ -465,6 +501,14 @@ Examples:
     parser.add_argument('--ethf', type=float, default=0.2,
                         help='Energy Threshold Factor for GAODV (default: 0.2, range 0-1)')
     
+    # Energy Model Parameters (for tuning battery life)
+    parser.add_argument('--idle-current', type=float, default=0.0273, dest='idle_current',
+                        help='Idle current in Amps (default: 0.0273 = 27.3mA)')
+    parser.add_argument('--rx-current', type=float, default=0.0313, dest='rx_current',
+                        help='RX current in Amps (default: 0.0313 = 31.3mA)')
+    parser.add_argument('--tx-current-base', type=float, default=0.010, dest='tx_current_base',
+                        help='Base TX current in Amps (default: 0.010 = 10mA)')
+    
     # System options
     parser.add_argument('--ns3-path', type=Path, default=None,
                         help='Path to NS-3 installation (auto-detected if not specified)')
@@ -474,6 +518,8 @@ Examples:
                         help='Skip building NS-3 (assumes already built)')
     parser.add_argument('--no-collect', action='store_true',
                         help='Skip collecting result files to results folder')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Show full NS-3 simulation output (includes energy calculations)')
     
     args = parser.parse_args()
     
@@ -494,7 +540,8 @@ Examples:
     print(f"  Source File: {args.source_file}")
     print(f"  Protocols: {args.protocols}")
     print(f"  Nodes: {args.nodes}")
-    print(f"  TX Range: {args.txrange[0] if args.txrange else 100.0}m")
+    print(f"  TX Range: {args.txrange[0] if args.txrange else 150.0}m")
+    print(f"  Node Spacing: {args.node_spacing}m")
     print(f"  TX Power: {args.txpower}")
     print(f"  Runs: {args.runs}")
     print(f"  Simulation Time: {args.simtime}s")

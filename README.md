@@ -11,21 +11,22 @@ Implementation of **GAODV (Geometric and Energy-Aware AODV)** based on the **EDA
 
 ---
 
-> [!CAUTION]
-> ## ⚠️ Critical: TX Range Must Exceed Node Spacing!
+> [!NOTE]
+> ## 📡 TX Range and Node Spacing Configuration
 > 
-> The simulation uses a **linear grid topology with 120m node spacing**. For packets to be delivered:
+> The simulation uses a **configurable grid topology**. Default values are now safe:
 > 
-> | TX Range | Result |
-> |----------|--------|
-> | `--txrange 100` (default) | ❌ **0% PDR** - nodes cannot communicate |
-> | `--txrange 150` or higher | ✅ **100% PDR** - full connectivity |
+> | Parameter | Default | Description |
+> |-----------|---------|-------------|
+> | `--txrange` | 150m | Transmission range (must exceed node spacing) |
+> | `--node-spacing` | 50m | Distance between nodes in grid |
+> | `--txpower` | 7.5 dBm | TX power (affects energy consumption) |
 > 
-> **Always use `--txrange 150` or higher for meaningful results!**
+> Higher TX power now consumes more energy (power-dependent model).
 > 
 > ```bash
-> # Correct usage
-> python3 scripts/run_all.py --protocols GAODV AODV --txrange 150 --runs 5
+> # Example: larger spacing requires longer range
+> python3 scripts/run_all.py --protocols GAODV AODV --node-spacing 100 --txrange 150 --runs 5
 > ```
 
 ---
@@ -71,6 +72,29 @@ python3 scripts/run_all.py --protocols GAODV --runs 1
 
 ---
 
+## 🌐 Web Dashboard
+
+A modern web-based dashboard is available for running simulations without using the command line.
+
+### Start the Dashboard
+
+```bash
+python3 dashboard/start_dashboard.py
+```
+
+This will:
+1. Start the HTTP server on port 8000
+2. Open `http://localhost:8000` in your browser
+
+### Features
+- **Visual Parameter Configuration** - All CLI options in a clean UI
+- **Real-time Console Output** - Live simulation progress
+- **Results Viewer** - Browse and download CSV files
+- **Modern Design** - Purple/violet gradient theme
+
+---
+
+
 ## 🧪 Test Cases
 
 ### Ready-to-Run Commands
@@ -93,12 +117,18 @@ python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --simtime 500 --run
 python3 scripts/run_all.py --protocols GAODV AODV OLSR DSDV DSR --nodes 50 --runs 3
 ```
 
-#### Test 4: TX Range Testing
+#### Test 4: TX Range vs Node Spacing
 ```bash
-# Test different transmission ranges (100m, 150m, 200m)
-python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 100
-python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 150
-python3 scripts/run_all.py --protocols GAODV AODV --nodes 50 --runs 3 --txrange 200
+# Test different configurations of range and spacing
+# Default: 50m spacing with 150m range (good connectivity)
+python3 scripts/run_all.py --protocols GAODV AODV --runs 3
+
+# Larger spacing requires longer range
+python3 scripts/run_all.py --protocols GAODV AODV --node-spacing 100 --txrange 150 --runs 3
+python3 scripts/run_all.py --protocols GAODV AODV --node-spacing 100 --txrange 200 --runs 3
+
+# Dense network (closer nodes)
+python3 scripts/run_all.py --protocols GAODV AODV --node-spacing 30 --txrange 100 --runs 3
 ```
 
 #### Test 5: Network Scalability
@@ -229,12 +259,40 @@ python3 scripts/run_all.py [OPTIONS]
 | `--ethf` | 0.2 | `--ethf 0.3` |
 | `--txpower` | 7.5 | `--txpower 10.0` |
 
-### RF/Wireless Parameters
+### 📡 RF/Wireless & Topology Parameters
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--txRange` | 100 | Transmission range in meters |
-| `--txpower` | 7.5 | Transmission power in dBm (if not using txRange) |
+| Option | Default | Range | Description |
+|--------|---------|-------|-------------|
+| `--txRange` | **150m** | 50-500m | Transmission range (must exceed node spacing) |
+| `--node-spacing` | **50m** | 10-200m | Distance between nodes in grid topology |
+| `--txpower` | **7.5 dBm** | 0-20 dBm | TX power (affects range with Friis model & energy) |
+
+> **💡 Tip:** TX range must be greater than node spacing for connectivity.  
+> Higher TX power = longer range + more energy consumption.
+
+### 🔋 Energy Model Parameters
+
+| Option | Default | Unit | Description |
+|--------|---------|------|-------------|
+| `--initial-energy` | **20** | Joules | Initial energy per node |
+| `--idle-current` | **0.0273** | Amps | Idle current (27.3mA) |
+| `--rx-current` | **0.0313** | Amps | RX current (31.3mA) |
+| `--tx-current-base` | **0.010** | Amps | Base TX current (10mA + power-dependent) |
+
+> **⚡ Battery Life Formula:**
+> ```
+> Node lifetime (seconds) = Initial Energy (J) / (Idle Current (A) × 3.3V)
+> Default: 20J / (0.0273A × 3.3V) ≈ 222 seconds
+> ```
+>
+> To extend battery life for longer simulations:
+> ```bash
+> # Option A: Increase initial energy (500s simulation)
+> python3 scripts/run_all.py --initial-energy 50 --simtime 500
+>
+> # Option B: Reduce currents (for ultra-low-power nodes)
+> python3 scripts/run_all.py --idle-current 0.01 --rx-current 0.01 --tx-current-base 0.005
+> ```
 
 ### System Options
 
@@ -260,7 +318,8 @@ Based on **Table 1** from the EDA-AODV paper:
 | Energy Threshold (ETHF) | **20%** | `--ethf 0.2` |
 | Alpha (α) | **0.6** | (code: Alpha=0.6, range 0.4-0.8) |
 | MAC Layer | 802.11a | (hardcoded) |
-| TX Range | **100 m** | `--txRange 100` |
+| TX Range | **150 m** | `--txRange 150` |
+| Node Spacing | **50 m** | `--node-spacing 50` |
 
 ---
 

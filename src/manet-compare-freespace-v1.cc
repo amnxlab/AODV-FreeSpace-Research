@@ -26,6 +26,7 @@
 #include <vector>
 #include <algorithm>
 #include <sstream>
+#include <iomanip>  // For std::setw, std::setprecision
 #include <ctime>  // For timestamped result files
 
 using namespace ns3;
@@ -109,7 +110,8 @@ private:
     double m_totalTime{500.0};  // Simulation duration in seconds - default 500s
     std::string m_protocolName{"GAODV"};
     double m_txp{7.5};
-    double m_txRange{100.0};  // Transmission range in meters - default 100m
+    double m_txRange{150.0};  // Transmission range in meters - default 150m (must exceed node spacing)
+    double m_nodeSpacing{50.0};  // Distance between nodes in grid - default 50m
     bool m_traceMobility{false};
     bool m_flowMonitor{false};
     
@@ -122,6 +124,11 @@ private:
     double m_initialEnergyJ{20.0};  // Initial energy per node in Joules (paper: 20J)
     uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
     double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
+    
+    // Energy Model Parameters (scaled for low-power sensor nodes)
+    double m_idleCurrentA{0.0273};   // Idle current in Amps (27.3mA - 10x reduced from Atheros AR5414)
+    double m_rxCurrentA{0.0313};     // RX current in Amps (31.3mA)
+    double m_txCurrentBaseA{0.010};  // Base TX current in Amps (10mA, plus power-dependent component)
     
     // Run tracking for session-based CSV output
     uint32_t m_runNumber{1};        // Current run number (1-indexed)
@@ -224,6 +231,7 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("totalTime", "Simulation time in seconds", m_totalTime);
     cmd.AddValue("txpower", "Transmission power in dBm", m_txp);
     cmd.AddValue("txRange", "Transmission range in meters", m_txRange);
+    cmd.AddValue("nodeSpacing", "Distance between nodes in grid (meters)", m_nodeSpacing);
     // EDA-AODV Paper Parameters
     cmd.AddValue("areaWidth", "Simulation area width in meters", m_areaWidth);
     cmd.AddValue("areaHeight", "Simulation area height in meters", m_areaHeight);
@@ -233,6 +241,10 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("initialEnergy", "Initial energy per node in Joules", m_initialEnergyJ);
     cmd.AddValue("packetSize", "Packet size in bytes", m_packetSize);
     cmd.AddValue("packetRate", "Packets per second", m_packetRate);
+    // Energy Model Parameters
+    cmd.AddValue("idleCurrent", "Idle current in Amps (default: 0.0273 = 27.3mA)", m_idleCurrentA);
+    cmd.AddValue("rxCurrent", "RX current in Amps (default: 0.0313 = 31.3mA)", m_rxCurrentA);
+    cmd.AddValue("txCurrentBase", "Base TX current in Amps (default: 0.010 = 10mA)", m_txCurrentBaseA);
     cmd.AddValue("runNumber", "Run number for this experiment (1-indexed)", m_runNumber);
     cmd.AddValue("sessionId", "Session ID for grouping results", m_sessionId);
     cmd.Parse(argc, argv);
@@ -283,7 +295,7 @@ ManetCompare1::Run()
     std::cout << "\n========== SIMULATION PARAMETERS (EDA-AODV Paper) ==========" << std::endl;
     std::cout << "Protocol: " << m_protocolName << std::endl;
     std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
-    std::cout << "Mobility: STATIC (grid layout, 120m spacing)" << std::endl;
+    std::cout << "Mobility: STATIC (grid layout, " << m_nodeSpacing << "m spacing)" << std::endl;
     std::cout << "WiFi: 802.11a, OfdmRate6Mbps" << std::endl;
     std::cout << "TX Range: " << m_txRange << " m" << std::endl;
     std::cout << "TX Power: " << m_txp << " dBm" << std::endl;
@@ -342,26 +354,78 @@ ManetCompare1::Run()
     Config::ConnectWithoutContext("/NodeList/*/DeviceList/*/Phy/PhyRxEnd", MakeCallback(&PhyRxOkTrace));
 
     // 🔋 WifiRadioEnergyModel - tracks actual TX/RX/Idle power consumption per WiFi PHY state
-    // This connects to WiFi PHY state machine for accurate energy tracking
-    // Does NOT affect routing behavior - only observes consumption
+    // TX current is power-dependent: higher TX power = more energy consumption
     WifiRadioEnergyModelHelper radioEnergyHelper;
-    // Typical 802.11a power consumption values (based on Atheros AR5414 datasheet)
-    radioEnergyHelper.Set("TxCurrentA", DoubleValue(0.380));    // 380mA when transmitting
-    radioEnergyHelper.Set("RxCurrentA", DoubleValue(0.313));    // 313mA when receiving  
-    radioEnergyHelper.Set("IdleCurrentA", DoubleValue(0.273));  // 273mA when idle
-    radioEnergyHelper.Set("SleepCurrentA", DoubleValue(0.033)); // 33mA when sleeping
-    radioEnergyHelper.Set("CcaBusyCurrentA", DoubleValue(0.273)); // CCA busy same as idle
-    radioEnergyHelper.Set("SwitchingCurrentA", DoubleValue(0.273)); // Switching same as idle
+    // Calculate TX current from power (linear model: base + power-proportional component)
+    // m_txp is in dBm, convert to Watts: P_watts = 10^((P_dBm - 30) / 10)
+    double txPowerWatts = std::pow(10.0, (m_txp - 30.0) / 10.0);
+    // TX current = configurable base + power-dependent component
+    double txCurrentA = m_txCurrentBaseA + (txPowerWatts / 3.3);
+    double sleepCurrentA = m_idleCurrentA / 8.0;
+    
+    // Calculate power consumption for each state
+    double supplyVoltage = 3.3;  // Volts
+    double txPowerConsumption = txCurrentA * supplyVoltage;       // Watts
+    double rxPowerConsumption = m_rxCurrentA * supplyVoltage;     // Watts
+    double idlePowerConsumption = m_idleCurrentA * supplyVoltage; // Watts
+    
+    // Calculate estimated node lifetime (at idle)
+    double nodeLifetimeAtIdle = m_initialEnergyJ / idlePowerConsumption;  // seconds
+    double totalNetworkEnergy = m_initialEnergyJ * nWifis;  // Joules
+    
+    // Print nice energy model summary
+    std::cout << std::endl;
+    std::cout << "╔══════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║              🔋 ENERGY MODEL CONFIGURATION                   ║" << std::endl;
+    std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  Initial Energy:     " << std::fixed << std::setprecision(1) << std::setw(8) << m_initialEnergyJ << " J per node                    ║" << std::endl;
+    std::cout << "║  Total Network:      " << std::setw(8) << totalNetworkEnergy << " J (" << nWifis << " nodes)                  ║" << std::endl;
+    std::cout << "║  Supply Voltage:     " << std::setw(8) << supplyVoltage << " V                              ║" << std::endl;
+    std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  TX Power:           " << std::setw(8) << std::setprecision(2) << m_txp << " dBm                            ║" << std::endl;
+    std::cout << "║    → TX Power (W):   " << std::setw(8) << std::setprecision(4) << txPowerWatts << " W                              ║" << std::endl;
+    std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  CURRENT DRAW (per state):                                   ║" << std::endl;
+    std::cout << "║    TX Current:       " << std::setw(8) << std::setprecision(4) << txCurrentA * 1000 << " mA (base + power-dependent)    ║" << std::endl;
+    std::cout << "║    RX Current:       " << std::setw(8) << m_rxCurrentA * 1000 << " mA                             ║" << std::endl;
+    std::cout << "║    Idle Current:     " << std::setw(8) << m_idleCurrentA * 1000 << " mA                             ║" << std::endl;
+    std::cout << "║    Sleep Current:    " << std::setw(8) << sleepCurrentA * 1000 << " mA                             ║" << std::endl;
+    std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  POWER CONSUMPTION (P = I × V):                              ║" << std::endl;
+    std::cout << "║    TX Power:         " << std::setw(8) << std::setprecision(4) << txPowerConsumption << " W                              ║" << std::endl;
+    std::cout << "║    RX Power:         " << std::setw(8) << rxPowerConsumption << " W                              ║" << std::endl;
+    std::cout << "║    Idle Power:       " << std::setw(8) << idlePowerConsumption << " W                              ║" << std::endl;
+    std::cout << "╠══════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  ⏱️  NODE LIFETIME ESTIMATE:                                  ║" << std::endl;
+    std::cout << "║    At Idle:          " << std::setw(8) << std::setprecision(1) << nodeLifetimeAtIdle << " seconds                        ║" << std::endl;
+    std::cout << "║    Formula: E / (I × V) = " << m_initialEnergyJ << "J / (" << m_idleCurrentA << "A × 3.3V)       ║" << std::endl;
+    if (nodeLifetimeAtIdle < m_totalTime) {
+        std::cout << "║  ⚠️  WARNING: Node may deplete before sim ends (" << m_totalTime << "s)!      ║" << std::endl;
+    } else {
+        std::cout << "║  ✓  OK: Nodes will survive full simulation (" << m_totalTime << "s)          ║" << std::endl;
+    }
+    std::cout << "╚══════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << std::endl;
+    
+    // Reset stream formatting to defaults (prevent affecting PDR output later)
+    std::cout << std::defaultfloat << std::setprecision(6);
+    
+    radioEnergyHelper.Set("TxCurrentA", DoubleValue(txCurrentA));
+    radioEnergyHelper.Set("RxCurrentA", DoubleValue(m_rxCurrentA));
+    radioEnergyHelper.Set("IdleCurrentA", DoubleValue(m_idleCurrentA));
+    radioEnergyHelper.Set("SleepCurrentA", DoubleValue(sleepCurrentA));
+    radioEnergyHelper.Set("CcaBusyCurrentA", DoubleValue(m_idleCurrentA));
+    radioEnergyHelper.Set("SwitchingCurrentA", DoubleValue(m_idleCurrentA));
     m_deviceEnergyModels = radioEnergyHelper.Install(adhocDevices, m_energySources);
 
     // 🚶 Mobility - STATIC for initial testing (grid positioning)
     MobilityHelper mobilityAdhoc;
     
-    // Grid positioning - 120m spacing for good radio connectivity
+    // Grid positioning with configurable node spacing
     mobilityAdhoc.SetPositionAllocator("ns3::GridPositionAllocator",
                                       "MinX", DoubleValue(0.0),
                                       "MinY", DoubleValue(0.0),
-                                      "DeltaX", DoubleValue(120.0),
+                                      "DeltaX", DoubleValue(m_nodeSpacing),
                                       "DeltaY", DoubleValue(0),
                                       "GridWidth", UintegerValue(nWifis),
                                       "LayoutType", StringValue("RowFirst"));
