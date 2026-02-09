@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root / 'scripts'))
 from api.validators import validate_parameters, validate_ns3_path
 from api.simulation import SimulationRunner
 from api.visualizer import generate_charts, load_csv_data
+from api.visualizer_enhanced import generate_all_charts, load_csv_data as load_csv_enhanced
 
 # Initialize Flask app
 app = Flask(__name__, 
@@ -244,8 +245,9 @@ def visualize_results(filename):
     chart_types = request.args.getlist('charts')
     if not chart_types:
         chart_types = None  # Generate all
-        
-    charts = generate_charts(str(csv_path), chart_types)
+    
+    # Use enhanced visualizer for comprehensive charts
+    charts = generate_all_charts(str(csv_path), chart_types)
     return jsonify(charts)
 
 

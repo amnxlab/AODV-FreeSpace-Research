@@ -2005,16 +2005,67 @@
             const container = document.getElementById('chartsGrid');
             container.innerHTML = '';
             
-            // Display each chart
-            ['overview_chart', 'pdr_chart', 'energy_chart', 'efficiency_chart'].forEach(chartType => {
-                if (data[chartType]) {
+            // Chart display order and titles (enhanced visualizer)
+            const chartOrder = [
+                { key: 'energy_breakdown', title: 'Energy Breakdown by Component (Phase 0)' },
+                { key: 'routing_overhead', title: 'Routing vs Data Packet Comparison' },
+                { key: 'pdr_chart', title: 'PDR Comparison' },
+                { key: 'energy_chart', title: 'Energy Consumption' },
+                { key: 'efficiency_chart', title: 'Energy Efficiency' },
+            ];
+            
+            // Add matrix charts dynamically
+            Object.keys(data).forEach(key => {
+                if (key.includes('_by_') && !chartOrder.find(c => c.key === key)) {
+                    // Convert key to title: "pdr_percent_by_nodes" -> "PDR Percent by Nodes"
+                    const title = key.split('_').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ');
+                    chartOrder.push({ key, title });
+                }
+            });
+            
+            // Display statistics first
+            if (data.statistics) {
+                let statsHTML = '<div class="chart-container" style="grid-column: 1 / -1;"><div style="background: #1a365d; padding: 20px; border-radius: 8px; color: white;"><h3 style="margin-top:0;">Protocol Statistics</h3><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">';
+                
+                Object.entries(data.statistics).forEach(([protocol, stats]) => {
+                    statsHTML += `<div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 6px;">
+                        <h4 style="margin:0 0 10px 0; color: #0d9488;">${protocol}</h4>
+                        ${stats.pdr_mean !== undefined ? `<p style="margin:5px 0;">PDR: ${stats.pdr_mean.toFixed(2)}% ± ${(stats.pdr_std || 0).toFixed(2)}</p>` : ''}
+                        ${stats.energy_mean !== undefined ? `<p style="margin:5px 0;">Energy: ${stats.energy_mean.toFixed(2)}J ± ${(stats.energy_std || 0).toFixed(2)}</p>` : ''}
+                        ${stats.efficiency_mean !== undefined ? `<p style="margin:5px 0;">Efficiency: ${stats.efficiency_mean.toFixed(4)} PDR/J</p>` : ''}
+                        ${stats.routing_energy_pct !== undefined ? `<p style="margin:5px 0;">Routing: ${stats.routing_energy_pct.toFixed(1)}%</p>` : ''}
+                    </div>`;
+                });
+                
+                statsHTML += '</div></div></div>';
+                container.innerHTML += statsHTML;
+            }
+            
+            // Display charts in order
+            chartOrder.forEach(({ key, title }) => {
+                if (data[key]) {
                     container.innerHTML += `
                         <div class="chart-container">
-                            <img src="${data[chartType]}" alt="${chartType}">
+                            <h3 style="margin: 0 0 10px 0; text-align: center; color: #1a365d;">${title}</h3>
+                            <img src="${data[key]}" alt="${title}" style="width: 100%;">
                         </div>
                     `;
                 }
             });
+            
+            // Show error if present
+            if (data.error) {
+                container.innerHTML += `
+                    <div class="chart-container" style="grid-column: 1 / -1;">
+                        <div style="background: #C62828; color: white; padding: 20px; border-radius: 8px;">
+                            <h3>Error generating charts</h3>
+                            <p>${data.error}</p>
+                        </div>
+                    </div>
+                `;
+            }
             
             document.getElementById('chartsContainer').classList.remove('hidden');
             document.getElementById('chartsContainer').scrollIntoView({ behavior: 'smooth' });
