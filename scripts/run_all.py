@@ -264,8 +264,15 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         ns3_args += f" --packetRate={sim_args['packet_rate']}"
     if sim_args.get('txrange'):
         ns3_args += f" --txRange={sim_args['txrange']}"
-    if sim_args.get('node_spacing'):
+    
+    # Mobility model (always pass)
+    mobility_model = sim_args.get('mobility_model', 'STATIC_GRID')
+    ns3_args += f" --mobilityModel={mobility_model}"
+    
+    # Node spacing (only for STATIC_GRID)
+    if mobility_model == 'STATIC_GRID' and sim_args.get('node_spacing'):
         ns3_args += f" --nodeSpacing={sim_args['node_spacing']}"
+    
     # Energy model parameters
     if sim_args.get('idle_current'):
         ns3_args += f" --idleCurrent={sim_args['idle_current']}"
@@ -296,15 +303,14 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
     else:
         run_cmd = f'./waf --run "{PROGRAM_NAME} {ns3_args}"'
     
-    # Print command for debugging
-    print("\n" + "═" * 70, flush=True)
-    print("EXECUTING NS-3 COMMAND:", flush=True)
-    print("═" * 70, flush=True)
-    print(run_cmd, flush=True)
-    print("═" * 70 + "\n", flush=True)
-    
     try:
         if verbose:
+            # Print command in verbose mode only
+            print("\n" + "═" * 70, flush=True)
+            print("EXECUTING NS-3 COMMAND:", flush=True)
+            print("═" * 70, flush=True)
+            print(run_cmd, flush=True)
+            print("═" * 70 + "\n", flush=True)
             # Stream output in real-time for verbose mode
             print("\n" + "┌" + "─" * 68 + "┐", flush=True)
             print("│" + " NS-3 VERBOSE OUTPUT ".center(68) + "│", flush=True)
@@ -347,6 +353,9 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
         sent_match = re.search(r'Sender Sent:\s+(\d+)', output)
         recv_match = re.search(r'Sink Received.*:\s+(\d+)', output)
         energy_match = re.search(r'Total Consumed Energy:\s+([\d.]+)', output)
+        routing_energy_match = re.search(r'Routing packets:\s+([\d.]+)\s+J\s+\(([\d.]+)%\)', output)
+        data_energy_match = re.search(r'Data packets:\s+([\d.]+)\s+J\s+\(([\d.]+)%\)', output)
+        routing_pkts_match = re.search(r'Routing packets TX:\s+(\d+)', output)
         
         # Simulation succeeded if we got PDR output (even if returncode != 0 due to cleanup crash)
         if pdr_match:
@@ -365,7 +374,17 @@ def run_single_experiment(ns3_path, protocol, nodes, txpower, run_number, sim_ar
                     metrics.append(f"Throughput: {throughput_kbps:.2f} kbps")
             
             if energy_match:
-                metrics.append(f"Energy Consumed: {float(energy_match.group(1)):.1f}J")
+                total_energy = float(energy_match.group(1))
+                energy_str = f"Energy Consumed: {total_energy:.1f}J"
+                
+                # Add breakdown if available (Phase 0 output)
+                if routing_energy_match and data_energy_match:
+                    routing_pct = float(routing_energy_match.group(2))
+                    data_pct = float(data_energy_match.group(2))
+                    idle_pct = 100 - routing_pct - data_pct
+                    energy_str += f" (R:{routing_pct:.1f}% D:{data_pct:.1f}% I:{idle_pct:.1f}%)"
+                
+                metrics.append(energy_str)
             
             print(f"    ✓ {' | '.join(metrics)}")
             return True
@@ -442,11 +461,14 @@ def run_experiments(args):
     print(f"{'='*70}")
     print(f"Total: {len(experiments)} | Successful: {successful} | Failed: {failed}")
     print(f"{'='*70}\n")
+    
+    # Return session_id for result collection
+    return session_id
 
 
 # ========== RESULT COLLECTION ==========
-def collect_results(args):
-    """Move individual result CSV files to results folder (no aggregation)."""
+def collect_results(args, session_id):
+    """Move the session result CSV file to results folder."""
     print(f"\n{'='*70}")
     print(f"COLLECTING RESULTS")
     print(f"{'='*70}\n")
@@ -454,15 +476,22 @@ def collect_results(args):
     results_dir = PROJECT_DIR / "results"
     results_dir.mkdir(exist_ok=True)
     
-    # Look for result CSV files in NS-3 directory (where simulation creates them)
-    result_files = list(args.ns3_path.glob("results_*.csv"))
+    # Look for THIS session's result file only (not all results_*.csv)
+    session_file_pattern = f"results_session_{session_id}.csv"
+    result_files = list(args.ns3_path.glob(session_file_pattern))
+    
+    # Fallback: if session file not found, look for any recent results_*.csv
+    if not result_files:
+        print(f"Session file '{session_file_pattern}' not found.")
+        print("Searching for any results_*.csv files...")
+        result_files = list(args.ns3_path.glob("results_*.csv"))
     
     if not result_files:
         print("No result files found to collect.")
         print(f"Searched in: {args.ns3_path}")
         return
     
-    # Move each result file to results folder (preserving individual files)
+    # Move session file to results folder
     moved_count = 0
     for result_file in result_files:
         dest_file = results_dir / result_file.name
@@ -533,6 +562,9 @@ Examples:
                         help='Maximum transmission range for GAODV in meters (default: 250.0)')
     
     # Mobility and Area Parameters
+    parser.add_argument('--mobility-model', type=str, default='STATIC_GRID', dest='mobility_model',
+                        choices=['STATIC_GRID', 'RANDOM_STATIC', 'RANDOM_DYNAMIC'],
+                        help='Mobility model (default: STATIC_GRID)')
     parser.add_argument('--area-width', type=float, default=800.0, dest='area_width',
                         help='Simulation area width (X-dimension) in meters (default: 800)')
     parser.add_argument('--area-height', type=float, default=400.0, dest='area_height',
@@ -545,12 +577,12 @@ Examples:
                         help='Pause time in seconds (default: 50)')
     
     # Energy Model Parameters (for tuning battery life)
-    parser.add_argument('--idle-current', type=float, default=0.0273, dest='idle_current',
-                        help='Idle current in Amps (default: 0.0273 = 27.3mA)')
+    parser.add_argument('--idle-current', type=float, default=0.002, dest='idle_current',
+                        help='Idle current in Amps (default: 0.002 = 2mA, Phase 0 fix)')
     parser.add_argument('--rx-current', type=float, default=0.0313, dest='rx_current',
                         help='RX current in Amps (default: 0.0313 = 31.3mA)')
-    parser.add_argument('--tx-current-base', type=float, default=0.010, dest='tx_current_base',
-                        help='Base TX current in Amps (default: 0.010 = 10mA)')
+    parser.add_argument('--tx-current-base', type=float, default=0.180, dest='tx_current_base',
+                        help='Base TX current in Amps (default: 0.180 = 180mA, Phase 0 fix)')
     
     # System options
     parser.add_argument('--ns3-path', type=Path, default=None,
@@ -596,11 +628,11 @@ Examples:
     
     # Run experiments
     start_time = time.time()
-    run_experiments(args)
+    session_id = run_experiments(args)
     
     # Collect results (move individual files to results folder)
     if not args.no_collect:
-        collect_results(args)
+        collect_results(args, session_id)
     
     elapsed_time = time.time() - start_time
     print(f"Total execution time: {elapsed_time:.2f} seconds")

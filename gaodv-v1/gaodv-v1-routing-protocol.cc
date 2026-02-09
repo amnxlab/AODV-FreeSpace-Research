@@ -1073,19 +1073,23 @@ RoutingProtocol::RecvRequest(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address se
         return;
     }
     
-    // STEP 6: "NEF < RREQEF?"
+    // STEP 6: "NEF < RREQEF?" (Flowchart decision)
     double rreqEf = rreq.GetRreqEf();
     if (myNef < rreqEf)
     {
-        // My NEF is lower - update both position AND RREQEF
+        // YES: My NEF is lower - update position AND RREQEF=NEF (bottleneck tracking)
+        rreq.SetPosition(GetPosition());
         rreq.SetRreqEf(myNef);
-        NS_LOG_DEBUG("Updated RREQEF: " << rreqEf << " -> " << myNef);
+        NS_LOG_DEBUG("NEF < RREQEF: Updated position and RREQEF: " << rreqEf << " -> " << myNef);
+    }
+    else
+    {
+        // NO: My NEF is higher - only update position (X,Y,Z Update)
+        rreq.SetPosition(GetPosition());
+        NS_LOG_DEBUG("NEF >= RREQEF: Updated position only, keeping RREQEF=" << rreqEf);
     }
     
-    // Always update position (x,y,z) with current node's position
-    rreq.SetPosition(GetPosition());
-    
-    // Rebroadcast RREQ
+    // Rebroadcast RREQ with reverse path
     NS_LOG_DEBUG("Rebroadcasting RREQ to " << rreq.GetDst());
     
     Ptr<Packet> packet = Create<Packet>();

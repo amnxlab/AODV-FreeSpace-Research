@@ -45,19 +45,23 @@ def validate_parameters(params: Dict[str, Any]) -> Tuple[bool, List[str], List[s
     # Network Topology Parameters
     nodes = params.get('nodes', 50)
     sinks = params.get('sinks', 10)
+    mobility_model = params.get('mobility_model', 'STATIC_GRID')
     node_spacing = params.get('node_spacing', 50.0)
     area_width = params.get('area_width', 800.0)
     area_height = params.get('area_height', 400.0)
+    min_speed = params.get('min_speed', 5.0)
+    max_speed = params.get('max_speed', 55.0)
+    pause_time = params.get('pause_time', 50.0)
     
     # RF Parameters
     tx_range = params.get('tx_range', 150.0)
     tx_power = params.get('tx_power', 7.5)
     
-    # Energy Parameters
+    # Energy Parameters (Phase 0 defaults)
     initial_energy = params.get('initial_energy', 20.0)
-    idle_current = params.get('idle_current', 0.0273)
+    idle_current = params.get('idle_current', 0.002)      # 2mA
     rx_current = params.get('rx_current', 0.0313)
-    tx_current_base = params.get('tx_current_base', 0.010)
+    tx_current_base = params.get('tx_current_base', 0.180)  # 180mA
     ethf = params.get('ethf', 0.2)
     
     # Traffic Parameters
@@ -81,29 +85,67 @@ def validate_parameters(params: Dict[str, Any]) -> Tuple[bool, List[str], List[s
     elif sinks > nodes:
         add_error(f"Sinks ({sinks}) cannot exceed total nodes ({nodes})", "sinks")
     
-    # Validate node spacing
-    if node_spacing <= 0:
-        add_error("Node spacing must be positive", "node_spacing")
-    elif node_spacing > 200:
-        add_warning(f"Large node spacing ({node_spacing}m) may result in disconnected network", "node_spacing")
-    
-    # CRITICAL: TX Range must exceed node spacing
-    if tx_range <= node_spacing:
+    # Validate mobility model
+    valid_mobility_models = ['STATIC_GRID', 'RANDOM_STATIC', 'RANDOM_DYNAMIC']
+    if mobility_model not in valid_mobility_models:
         add_error(
-            f"TX Range ({tx_range}m) MUST be greater than Node Spacing ({node_spacing}m) "
-            f"for network connectivity. Current ratio: {tx_range/node_spacing:.2f}x",
-            "tx_range"
-        )
-    elif tx_range < node_spacing * 1.5:
-        add_warning(
-            f"TX Range ({tx_range}m) is only {tx_range/node_spacing:.2f}x Node Spacing. "
-            f"Recommend at least 2x for reliable connectivity.",
-            "tx_range"
+            f"Invalid mobility model: {mobility_model}. Must be one of: {', '.join(valid_mobility_models)}",
+            "mobility_model"
         )
     
-    # Validate area dimensions (2D ground plane: width × length)
-    if area_width <= 0 or area_height <= 0:
-        add_error("Area dimensions must be positive", "area_width")
+    # Validate node spacing (only for STATIC_GRID)
+    if mobility_model == 'STATIC_GRID':
+        if node_spacing <= 0:
+            add_error("Node spacing must be positive", "node_spacing")
+        elif node_spacing > 200:
+            add_warning(f"Large node spacing ({node_spacing}m) may result in disconnected network", "node_spacing")
+        
+        # CRITICAL: TX Range must exceed node spacing for grid topology
+        if tx_range <= node_spacing:
+            add_error(
+                f"TX Range ({tx_range}m) MUST be greater than Node Spacing ({node_spacing}m) "
+                f"for network connectivity. Current ratio: {tx_range/node_spacing:.2f}x",
+                "tx_range"
+            )
+        elif tx_range < node_spacing * 1.5:
+            add_warning(
+                f"TX Range ({tx_range}m) is only {tx_range/node_spacing:.2f}x Node Spacing. "
+                f"Recommend at least 2x for reliable connectivity.",
+                "tx_range"
+            )
+    
+    # Validate area dimensions (for random topologies)
+    if mobility_model in ['RANDOM_STATIC', 'RANDOM_DYNAMIC']:
+        if area_width <= 0 or area_height <= 0:
+            add_error("Area dimensions must be positive for random topology", "area_width")
+        
+        # Check node density for random topologies
+        area = area_width * area_height
+        node_density = nodes / area
+        if node_density < 0.0001:  # Less than 1 node per 10,000 m²
+            add_warning(
+                f"Low node density ({nodes} nodes in {area:.0f} m²). Network may be disconnected.",
+                "area_width"
+            )
+    
+    # Validate mobility parameters (only for RANDOM_DYNAMIC)
+    if mobility_model == 'RANDOM_DYNAMIC':
+        if min_speed < 0 or max_speed < 0:
+            add_error("Speed values must be non-negative", "min_speed")
+        elif min_speed > max_speed:
+            add_error(
+                f"Min speed ({min_speed} m/s) cannot exceed max speed ({max_speed} m/s)",
+                "min_speed"
+            )
+        
+        if pause_time < 0:
+            add_error("Pause time must be non-negative", "pause_time")
+        elif pause_time > sim_time / 2:
+            add_warning(
+                f"Pause time ({pause_time}s) is more than half of simulation time ({sim_time}s). "
+                f"Nodes may not move much.",
+                "pause_time"
+            )
     
     # Validate TX power
     if not (0 <= tx_power <= 20):
@@ -133,23 +175,23 @@ def validate_parameters(params: Dict[str, Any]) -> Tuple[bool, List[str], List[s
         idle_only_lifetime = initial_energy / (idle_current * supply_voltage)
         
         # More realistic estimate: weighted average assuming traffic conditions
-        # Rough duty cycle: 40% idle, 35% RX, 25% TX (based on 4 pkt/s MANET traffic)
+        # Phase 0 duty cycle: 40% idle (2mA), 35% RX (31.3mA), 25% TX (180mA)
         rx_current = params.get('rx_current', 0.0313)
-        tx_current_base = params.get('tx_current_base', 0.010)
-        # TX current is higher due to power amplifier, estimate ~2x base for 7.5 dBm
-        tx_current_avg = tx_current_base * 2.5
+        tx_current_base = params.get('tx_current_base', 0.180)  # Phase 0: 180mA
+        # TX current with power amplifier overhead
+        tx_current_avg = tx_current_base * 1.2
         
         avg_current = (0.40 * idle_current + 0.35 * rx_current + 0.25 * tx_current_avg)
         realistic_lifetime = initial_energy / (avg_current * supply_voltage)
         
-        # Only error if simulation time exceeds battery lifetime (with small tolerance)
-        if sim_time > realistic_lifetime + 2:
-            add_error(
-                f"Simulation time ({sim_time}s) exceeds realistic node lifetime "
+        # Only warn if simulation time significantly exceeds battery lifetime
+        if sim_time > realistic_lifetime * 1.1:  # 10% tolerance
+            min_energy_required = sim_time * avg_current * supply_voltage * 1.05
+            add_warning(
+                f"Simulation time ({sim_time}s) may exceed node lifetime "
                 f"(~{realistic_lifetime:.0f}s with RX/TX activity). "
-                f"Increase initial energy to at least {(sim_time * avg_current * supply_voltage * 1.05):.1f}J "
-                f"or reduce simulation time.",
-                "sim_time"
+                f"Consider increasing initial energy to {min_energy_required:.1f}J for safety margin.",
+                "initial_energy"
             )
     
     # Validate packet parameters

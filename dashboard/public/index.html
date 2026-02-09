@@ -843,19 +843,49 @@
                             <span class="form-help">Receiver/destination nodes</span>
                         </div>
                         <div class="form-group">
+                            <label class="form-label">Mobility Model</label>
+                            <select class="form-input" id="mobility_model" onchange="updateMobilityFields()">
+                                <option value="STATIC_GRID">Static Grid</option>
+                                <option value="RANDOM_STATIC">Random Static</option>
+                                <option value="RANDOM_DYNAMIC">Random Dynamic</option>
+                            </select>
+                            <span class="form-help">Node placement and movement pattern</span>
+                        </div>
+                        
+                        <!-- Node Spacing - Only for STATIC_GRID -->
+                        <div class="form-group" id="node_spacing_group">
                             <label class="form-label">Node Spacing (m)</label>
                             <input type="number" class="form-input" id="node_spacing" value="50" step="10">
                             <span class="form-help">Distance between nodes in grid</span>
                         </div>
-                        <div class="form-group">
+                        
+                        <!-- Area Dimensions - Only for Random models -->
+                        <div class="form-group" id="area_width_group" style="display:none;">
                             <label class="form-label">Area Width (m)</label>
                             <input type="number" class="form-input" id="area_width" value="800" step="50">
                             <span class="form-help">X-dimension of rectangular ground area</span>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="area_height_group" style="display:none;">
                             <label class="form-label">Area Length (m)</label>
                             <input type="number" class="form-input" id="area_height" value="400" step="50">
                             <span class="form-help">Y-dimension of rectangular ground area</span>
+                        </div>
+                        
+                        <!-- Mobility Parameters - Only for RANDOM_DYNAMIC -->
+                        <div class="form-group" id="min_speed_group" style="display:none;">
+                            <label class="form-label">Min Speed (m/s)</label>
+                            <input type="number" class="form-input" id="min_speed" value="5" step="1" min="0">
+                            <span class="form-help">Minimum node velocity</span>
+                        </div>
+                        <div class="form-group" id="max_speed_group" style="display:none;">
+                            <label class="form-label">Max Speed (m/s)</label>
+                            <input type="number" class="form-input" id="max_speed" value="55" step="5" min="0">
+                            <span class="form-help">Maximum node velocity</span>
+                        </div>
+                        <div class="form-group" id="pause_time_group" style="display:none;">
+                            <label class="form-label">Pause Time (s)</label>
+                            <input type="number" class="form-input" id="pause_time" value="50" step="10" min="0">
+                            <span class="form-help">Time nodes pause at waypoints</span>
                         </div>
                     </div>
                 </div>
@@ -890,12 +920,17 @@
             <div class="card">
                 <div class="card-header" onclick="toggleCard(this)">
                     <h2 class="card-title">
-                        <span class="card-icon"></span>
+                        <span class="card-icon">⚡</span>
                         Energy Model Parameters (All Protocols)
                     </h2>
                     <span class="collapse-icon">v</span>
                 </div>
                 <div class="card-body">
+                    <div class="alert alert-info" style="margin-bottom: 1rem;">
+                        <strong>Phase 0 Energy Model:</strong> Optimized for protocol differentiation with realistic WiFi power consumption.
+                        Idle: 2mA (reduced from 27.3mA), TX: 180mA (increased from 10mA). 
+                        This enables clear distinction between routing protocols based on routing overhead.
+                    </div>
                     <div class="form-grid">
                         <div class="form-group">
                             <label class="form-label">Initial Energy (J)</label>
@@ -904,18 +939,18 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Idle Current (A)</label>
-                            <input type="number" class="form-input" id="idle_current" value="0.0273" step="0.001">
-                            <span class="form-help">Idle state current draw</span>
+                            <input type="number" class="form-input" id="idle_current" value="0.002" step="0.001">
+                            <span class="form-help">Phase 0: 2mA idle (was 27.3mA)</span>
                         </div>
                         <div class="form-group">
                             <label class="form-label">RX Current (A)</label>
                             <input type="number" class="form-input" id="rx_current" value="0.0313" step="0.001">
-                            <span class="form-help">Receive state current</span>
+                            <span class="form-help">31.3mA receive current</span>
                         </div>
                         <div class="form-group">
                             <label class="form-label">TX Current Base (A)</label>
-                            <input type="number" class="form-input" id="tx_current_base" value="0.010" step="0.001">
-                            <span class="form-help">Base transmit current</span>
+                            <input type="number" class="form-input" id="tx_current_base" value="0.180" step="0.001">
+                            <span class="form-help">Phase 0: 180mA TX (was 10mA)</span>
                         </div>
                     </div>
                 </div>
@@ -1083,24 +1118,7 @@
                     <div class="progress-bar" id="progressBar" style="width: 0%">0%</div>
                 </div>
                 
-                <div class="metrics-grid">
-                    <div class="metric-card">
-                        <div class="metric-label">Packet Delivery Ratio</div>
-                        <div class="metric-value" id="metricPDR">-<span class="metric-unit">%</span></div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Energy Consumed</div>
-                        <div class="metric-value" id="metricEnergy">-<span class="metric-unit">J</span></div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Energy Residual</div>
-                        <div class="metric-value" id="metricResidual">-<span class="metric-unit">J</span></div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Throughput</div>
-                        <div class="metric-value" id="metricThroughput">-<span class="metric-unit">kbps</span></div>
-                    </div>
-                </div>
+                <!-- Metrics removed - view in logs or results CSV -->
 
                 <div class="btn-group">
                     <button class="btn btn-primary" id="startBtn" onclick="startSimulation()">
@@ -1225,6 +1243,7 @@
             attachEventListeners();
             refreshResults();
             updateHelperTexts();
+            updateMobilityFields();  // Initialize mobility field visibility
         });
 
         // WebSocket initialization
@@ -1273,6 +1292,9 @@
                         }
                     }
                 });
+                
+                // Update mobility fields after loading defaults
+                updateMobilityFields();
             } catch (error) {
                 console.error('Error loading defaults:', error);
             }
@@ -1288,8 +1310,39 @@
             });
         }
 
+        // Update visibility of mobility-related fields based on selected model
+        function updateMobilityFields() {
+            const mobilityModel = document.getElementById('mobility_model').value;
+            
+            // Hide all mobility-specific fields first
+            document.getElementById('node_spacing_group').style.display = 'none';
+            document.getElementById('area_width_group').style.display = 'none';
+            document.getElementById('area_height_group').style.display = 'none';
+            document.getElementById('min_speed_group').style.display = 'none';
+            document.getElementById('max_speed_group').style.display = 'none';
+            document.getElementById('pause_time_group').style.display = 'none';
+            
+            // Show fields based on selected model
+            if (mobilityModel === 'STATIC_GRID') {
+                document.getElementById('node_spacing_group').style.display = 'block';
+            } else if (mobilityModel === 'RANDOM_STATIC') {
+                document.getElementById('area_width_group').style.display = 'block';
+                document.getElementById('area_height_group').style.display = 'block';
+            } else if (mobilityModel === 'RANDOM_DYNAMIC') {
+                document.getElementById('area_width_group').style.display = 'block';
+                document.getElementById('area_height_group').style.display = 'block';
+                document.getElementById('min_speed_group').style.display = 'block';
+                document.getElementById('max_speed_group').style.display = 'block';
+                document.getElementById('pause_time_group').style.display = 'block';
+            }
+            
+            // Trigger validation update
+            updateHelperTexts();
+        }
+
         // Update helper texts with calculations
         function updateHelperTexts() {
+            const mobilityModel = document.getElementById('mobility_model').value;
             const txRange = parseFloat(document.getElementById('tx_range').value);
             const nodeSpacing = parseFloat(document.getElementById('node_spacing').value);
             const initialEnergy = parseFloat(document.getElementById('initial_energy').value);
@@ -1298,15 +1351,21 @@
             const packetRate = parseInt(document.getElementById('packet_rate').value);
             const simTime = parseInt(document.getElementById('sim_time').value);
             
-            // TX Range validation
+            // TX Range validation (only for STATIC_GRID)
             const txRangeHelp = document.getElementById('txRangeHelp');
-            if (txRange > nodeSpacing) {
-                const ratio = (txRange / nodeSpacing).toFixed(2);
-                txRangeHelp.textContent = `Valid (${ratio}x spacing)`;
-                txRangeHelp.className = 'form-help';
+            if (mobilityModel === 'STATIC_GRID') {
+                if (txRange > nodeSpacing) {
+                    const ratio = (txRange / nodeSpacing).toFixed(2);
+                    txRangeHelp.textContent = `Valid (${ratio}x spacing)`;
+                    txRangeHelp.className = 'form-help';
+                } else {
+                    txRangeHelp.textContent = `WARNING: Must exceed ${nodeSpacing}m`;
+                    txRangeHelp.className = 'form-error';
+                }
             } else {
-                txRangeHelp.textContent = `WARNING: Must exceed ${nodeSpacing}m`;
-                txRangeHelp.className = 'form-error';
+                // For random topologies, just show the value
+                txRangeHelp.textContent = `Communication range for all nodes`;
+                txRangeHelp.className = 'form-help';
             }
             
             // Battery life calculation
@@ -1316,10 +1375,10 @@
                 const idleLifetime = initialEnergy / (idleCurrent * 3.3);
                 
                 // More realistic estimate with RX/TX activity
-                // Duty cycle: 40% idle, 35% RX, 25% TX
+                // Phase 0 model: 40% idle (2mA), 35% RX (31.3mA), 25% TX (180mA)
                 const rxCurrent = parseFloat(document.getElementById('rx_current').value);
                 const txCurrentBase = parseFloat(document.getElementById('tx_current_base').value);
-                const txCurrentAvg = txCurrentBase * 2.5; // Estimate with power amplifier
+                const txCurrentAvg = txCurrentBase * 1.2; // Phase 0: TX with PA overhead
                 const avgCurrent = (0.40 * idleCurrent + 0.35 * rxCurrent + 0.25 * txCurrentAvg);
                 const realisticLifetime = initialEnergy / (avgCurrent * 3.3);
                 
@@ -1372,12 +1431,12 @@
             const protocols = Array.from(document.querySelectorAll('input[name="protocols"]:checked'))
                 .map(cb => cb.value);
             
-            return {
+            const mobilityModel = document.getElementById('mobility_model').value;
+            
+            const params = {
                 nodes: parseInt(document.getElementById('nodes').value),
                 sinks: parseInt(document.getElementById('sinks').value),
-                node_spacing: parseFloat(document.getElementById('node_spacing').value),
-                area_width: parseFloat(document.getElementById('area_width').value),
-                area_height: parseFloat(document.getElementById('area_height').value),
+                mobility_model: mobilityModel,
                 tx_range: parseFloat(document.getElementById('tx_range').value),
                 tx_power: parseFloat(document.getElementById('tx_power').value),
                 initial_energy: parseFloat(document.getElementById('initial_energy').value),
@@ -1394,6 +1453,22 @@
                 skip_build: document.getElementById('skip_build').checked,
                 verbose: document.getElementById('verbose').checked
             };
+            
+            // Add mobility-specific parameters based on selected model
+            if (mobilityModel === 'STATIC_GRID') {
+                params.node_spacing = parseFloat(document.getElementById('node_spacing').value);
+            } else if (mobilityModel === 'RANDOM_STATIC') {
+                params.area_width = parseFloat(document.getElementById('area_width').value);
+                params.area_height = parseFloat(document.getElementById('area_height').value);
+            } else if (mobilityModel === 'RANDOM_DYNAMIC') {
+                params.area_width = parseFloat(document.getElementById('area_width').value);
+                params.area_height = parseFloat(document.getElementById('area_height').value);
+                params.min_speed = parseFloat(document.getElementById('min_speed').value);
+                params.max_speed = parseFloat(document.getElementById('max_speed').value);
+                params.pause_time = parseFloat(document.getElementById('pause_time').value);
+            }
+            
+            return params;
         }
 
         // Validate and switch to execute tab

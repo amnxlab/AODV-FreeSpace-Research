@@ -191,27 +191,33 @@ class SimulationRunner:
             '--simtime', str(params.get('sim_time', 500)),
             '--txpower', str(params.get('tx_power', 7.5)),
             '--txrange', str(params.get('tx_range', 150)),
-            '--node-spacing', str(params.get('node_spacing', 50)),
             '--initial-energy', str(params.get('initial_energy', 20.0)),
             '--packet-size', str(params.get('packet_size', 512)),
             '--packet-rate', str(params.get('packet_rate', 4)),
-            '--idle-current', str(params.get('idle_current', 0.0273)),
+            '--idle-current', str(params.get('idle_current', 0.002)),    # Phase 0: 2mA
             '--rx-current', str(params.get('rx_current', 0.0313)),
-            '--tx-current-base', str(params.get('tx_current_base', 0.010)),
+            '--tx-current-base', str(params.get('tx_current_base', 0.180)),  # Phase 0: 180mA
             '--ns3-path', str(ns3_path),
         ]
         
-        # Add optional mobility/area parameters if provided
-        if 'area_width' in params:
-            cmd.extend(['--area-width', str(params['area_width'])])
-        if 'area_height' in params:
-            cmd.extend(['--area-height', str(params['area_height'])])
-        if 'min_speed' in params:
-            cmd.extend(['--min-speed', str(params['min_speed'])])
-        if 'max_speed' in params:
-            cmd.extend(['--max-speed', str(params['max_speed'])])
-        if 'pause_time' in params:
-            cmd.extend(['--pause-time', str(params['pause_time'])])
+        # Add mobility model parameter
+        mobility_model = params.get('mobility_model', 'STATIC_GRID')
+        cmd.extend(['--mobility-model', mobility_model])
+        
+        # Add node spacing only for STATIC_GRID
+        if mobility_model == 'STATIC_GRID':
+            cmd.extend(['--node-spacing', str(params.get('node_spacing', 50))])
+        
+        # Add area and mobility parameters for random topologies
+        if mobility_model in ['RANDOM_STATIC', 'RANDOM_DYNAMIC']:
+            cmd.extend(['--area-width', str(params.get('area_width', 800))])
+            cmd.extend(['--area-height', str(params.get('area_height', 400))])
+        
+        # Add dynamic mobility parameters only for RANDOM_DYNAMIC
+        if mobility_model == 'RANDOM_DYNAMIC':
+            cmd.extend(['--min-speed', str(params.get('min_speed', 5.0))])
+            cmd.extend(['--max-speed', str(params.get('max_speed', 55.0))])
+            cmd.extend(['--pause-time', str(params.get('pause_time', 50.0))])
         
         # Add GAODV-specific parameters (run_all.py will use them only for GAODV)
         if 'ethf' in params:

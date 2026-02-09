@@ -1,2 +1,0 @@
-run,protocol,nodes,simtime,txPower,txRange,packetsSent,packetsReceived,pdr,initialEnergy,consumedEnergy,residualEnergy
-1,GAODV,10,100,7.5,150,356,354,0.994382,200,90.0896,109.91

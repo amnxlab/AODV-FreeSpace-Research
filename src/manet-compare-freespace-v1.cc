@@ -68,6 +68,9 @@ void SinkRxCallback(Ptr<Socket> socket)
 // Global PHY packet counters (since Config::Connect needs static functions)
 static std::vector<uint64_t> g_phyTxCount;
 static std::vector<uint64_t> g_phyRxCount;
+// Phase 0.3: Track routing vs data packets separately
+static uint64_t g_routingPacketsTx = 0;
+static uint64_t g_dataPacketsTx = 0;
 
 void PhyTxTrace(Ptr<const Packet> packet, double txPowerW)
 {
@@ -75,6 +78,20 @@ void PhyTxTrace(Ptr<const Packet> packet, double txPowerW)
     if (!g_phyTxCount.empty())
     {
         g_phyTxCount[0]++;  // Use index 0 for total count
+        
+        // Phase 0.3: Classify packet type
+        // Check packet size as heuristic: small packets (<100 bytes) are likely routing control
+        // Application packets are 512 bytes + headers
+        uint32_t packetSize = packet->GetSize();
+        
+        if (packetSize < 100)
+        {
+            g_routingPacketsTx++;  // Small packet = routing control (RREQ, RREP, HELLO, etc.)
+        }
+        else
+        {
+            g_dataPacketsTx++;  // Large packet = application CBR data
+        }
     }
 }
 
@@ -111,7 +128,8 @@ private:
     std::string m_protocolName{"GAODV"};
     double m_txp{7.5};
     double m_txRange{150.0};  // Transmission range in meters - default 150m (must exceed node spacing)
-    double m_nodeSpacing{50.0};  // Distance between nodes in grid - default 50m
+    double m_nodeSpacing{50.0};  // Distance between nodes in grid - default 50m (only used for STATIC_GRID)
+    std::string m_mobilityModel{"STATIC_GRID"};  // Mobility model: STATIC_GRID, RANDOM_STATIC, RANDOM_DYNAMIC
     bool m_traceMobility{false};
     bool m_flowMonitor{false};
     
@@ -125,10 +143,10 @@ private:
     uint32_t m_packetSize{512};  // Packet size in bytes (paper: 512B)
     double m_packetRate{4.0};    // Packets per second (paper: 4 pkt/s)
     
-    // Energy Model Parameters (scaled for low-power sensor nodes)
-    double m_idleCurrentA{0.0273};   // Idle current in Amps (27.3mA - 10x reduced from Atheros AR5414)
+    // Energy Model Parameters (Phase 0: Realistic values to show protocol differences)
+    double m_idleCurrentA{0.002};    // Idle current in Amps (2mA - Phase 0: reduced from 27.3mA)
     double m_rxCurrentA{0.0313};     // RX current in Amps (31.3mA)
-    double m_txCurrentBaseA{0.010};  // Base TX current in Amps (10mA, plus power-dependent component)
+    double m_txCurrentBaseA{0.180};  // Base TX current in Amps (180mA - Phase 0: increased from 10mA)
     
     // GAODV-specific Parameters
     double m_ethf{0.1};              // Energy Threshold Factor (0-1, default 0.1)
@@ -236,6 +254,7 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("txpower", "Transmission power in dBm", m_txp);
     cmd.AddValue("txRange", "Transmission range in meters", m_txRange);
     cmd.AddValue("nodeSpacing", "Distance between nodes in grid (meters)", m_nodeSpacing);
+    cmd.AddValue("mobilityModel", "Mobility model (STATIC_GRID, RANDOM_STATIC, RANDOM_DYNAMIC)", m_mobilityModel);
     // EDA-AODV Paper Parameters
     cmd.AddValue("areaWidth", "Simulation area width (X-dimension) in meters", m_areaWidth);
     cmd.AddValue("areaHeight", "Simulation area length (Y-dimension) in meters", m_areaHeight);
@@ -245,10 +264,10 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     cmd.AddValue("initialEnergy", "Initial energy per node in Joules", m_initialEnergyJ);
     cmd.AddValue("packetSize", "Packet size in bytes", m_packetSize);
     cmd.AddValue("packetRate", "Packets per second", m_packetRate);
-    // Energy Model Parameters
-    cmd.AddValue("idleCurrent", "Idle current in Amps (default: 0.0273 = 27.3mA)", m_idleCurrentA);
+    // Energy Model Parameters (Phase 0: Updated defaults)
+    cmd.AddValue("idleCurrent", "Idle current in Amps (default: 0.002 = 2mA)", m_idleCurrentA);
     cmd.AddValue("rxCurrent", "RX current in Amps (default: 0.0313 = 31.3mA)", m_rxCurrentA);
-    cmd.AddValue("txCurrentBase", "Base TX current in Amps (default: 0.010 = 10mA)", m_txCurrentBaseA);
+    cmd.AddValue("txCurrentBase", "Base TX current in Amps (default: 0.180 = 180mA)", m_txCurrentBaseA);
     // GAODV-specific Parameters
     cmd.AddValue("ethf", "Energy Threshold Factor (0-1, default: 0.1)", m_ethf);
     cmd.AddValue("maxRange", "Maximum transmission range in meters (default: 250.0)", m_maxRange);
@@ -260,6 +279,12 @@ ManetCompare1::CommandSetup(int argc, char** argv)
     if (std::find(allowedProtocols.begin(), allowedProtocols.end(), m_protocolName) == allowedProtocols.end())
     {
         NS_FATAL_ERROR("No such protocol: " << m_protocolName);
+    }
+    
+    std::vector<std::string> allowedMobility{"STATIC_GRID", "RANDOM_STATIC", "RANDOM_DYNAMIC"};
+    if (std::find(allowedMobility.begin(), allowedMobility.end(), m_mobilityModel) == allowedMobility.end())
+    {
+        NS_FATAL_ERROR("Invalid mobility model: " << m_mobilityModel << ". Must be STATIC_GRID, RANDOM_STATIC, or RANDOM_DYNAMIC");
     }
 }
 
@@ -302,7 +327,22 @@ ManetCompare1::Run()
     std::cout << "\n========== SIMULATION PARAMETERS (EDA-AODV Paper) ==========" << std::endl;
     std::cout << "Protocol: " << m_protocolName << std::endl;
     std::cout << "Nodes: " << nWifis << " (" << m_nSinks << " sinks, " << (nWifis - m_nSinks) << " sources)" << std::endl;
-    std::cout << "Mobility: STATIC (grid layout, " << m_nodeSpacing << "m spacing)" << std::endl;
+    
+    // Display mobility information based on model type
+    if (m_mobilityModel == "STATIC_GRID")
+    {
+        std::cout << "Mobility: STATIC_GRID (grid layout, " << m_nodeSpacing << "m spacing)" << std::endl;
+    }
+    else if (m_mobilityModel == "RANDOM_STATIC")
+    {
+        std::cout << "Mobility: RANDOM_STATIC (" << m_areaWidth << "x" << m_areaHeight << "m area)" << std::endl;
+    }
+    else if (m_mobilityModel == "RANDOM_DYNAMIC")
+    {
+        std::cout << "Mobility: RANDOM_DYNAMIC (" << m_areaWidth << "x" << m_areaHeight << "m area, "
+                  << m_minSpeed << "-" << m_maxSpeed << " m/s, pause " << m_pauseTime << "s)" << std::endl;
+    }
+    
     std::cout << "WiFi: 802.11a, OfdmRate6Mbps" << std::endl;
     std::cout << "TX Range: " << m_txRange << " m" << std::endl;
     std::cout << "TX Power: " << m_txp << " dBm" << std::endl;
@@ -323,6 +363,9 @@ ManetCompare1::Run()
     g_phyTxCount.resize(1, 0);  // Just need one counter for total
     g_phyRxCount.clear();
     g_phyRxCount.resize(1, 0);  // Just need one counter for total
+    // Phase 0.3: Reset routing/data packet counters
+    g_routingPacketsTx = 0;
+    g_dataPacketsTx = 0;
 
     // 🔋 Energy Source - EDA-AODV Paper: 20J initial energy per node
     // Current calibrated so 20J lasts full 500s simulation (12mA @ 3.3V = 0.04W)
@@ -438,20 +481,53 @@ ManetCompare1::Run()
     radioEnergyHelper.Set("SwitchingCurrentA", DoubleValue(m_idleCurrentA));
     m_deviceEnergyModels = radioEnergyHelper.Install(adhocDevices, m_energySources);
 
-    // 🚶 Mobility - STATIC for initial testing (grid positioning)
+    // 🚶 Mobility - Configure based on selected mobility model
     MobilityHelper mobilityAdhoc;
     
-    // Grid positioning with configurable node spacing
-    mobilityAdhoc.SetPositionAllocator("ns3::GridPositionAllocator",
-                                      "MinX", DoubleValue(0.0),
-                                      "MinY", DoubleValue(0.0),
-                                      "DeltaX", DoubleValue(m_nodeSpacing),
-                                      "DeltaY", DoubleValue(0),
-                                      "GridWidth", UintegerValue(nWifis),
-                                      "LayoutType", StringValue("RowFirst"));
+    if (m_mobilityModel == "STATIC_GRID")
+    {
+        // Grid positioning with configurable node spacing
+        mobilityAdhoc.SetPositionAllocator("ns3::GridPositionAllocator",
+                                          "MinX", DoubleValue(0.0),
+                                          "MinY", DoubleValue(0.0),
+                                          "DeltaX", DoubleValue(m_nodeSpacing),
+                                          "DeltaY", DoubleValue(0),
+                                          "GridWidth", UintegerValue(nWifis),
+                                          "LayoutType", StringValue("RowFirst"));
+        
+        // Static mobility - nodes do not move
+        mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    }
+    else if (m_mobilityModel == "RANDOM_STATIC")
+    {
+        // Random positioning within area bounds
+        mobilityAdhoc.SetPositionAllocator("ns3::RandomRectanglePositionAllocator",
+                                          "X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaWidth) + "]"),
+                                          "Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaHeight) + "]"));
+        
+        // Static mobility - nodes do not move after random placement
+        mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    }
+    else if (m_mobilityModel == "RANDOM_DYNAMIC")
+    {
+        // Random positioning within area bounds
+        mobilityAdhoc.SetPositionAllocator("ns3::RandomRectanglePositionAllocator",
+                                          "X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaWidth) + "]"),
+                                          "Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaHeight) + "]"));
+        
+        // Random Waypoint mobility - nodes move within area bounds
+        std::stringstream speedStream;
+        speedStream << "ns3::UniformRandomVariable[Min=" << m_minSpeed << "|Max=" << m_maxSpeed << "]";
+        
+        std::stringstream pauseStream;
+        pauseStream << "ns3::ConstantRandomVariable[Constant=" << m_pauseTime << "]";
+        
+        mobilityAdhoc.SetMobilityModel("ns3::RandomWaypointMobilityModel",
+                                      "Speed", StringValue(speedStream.str()),
+                                      "Pause", StringValue(pauseStream.str()),
+                                      "PositionAllocator", StringValue("ns3::RandomRectanglePositionAllocator[X=ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaWidth) + "]|Y=ns3::UniformRandomVariable[Min=0.0|Max=" + std::to_string(m_areaHeight) + "]]"));
+    }
     
-    // Static mobility - nodes do not move
-    mobilityAdhoc.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobilityAdhoc.Install(adhocNodes);
 
     // 🧭 Routing protocol setup
@@ -600,6 +676,9 @@ ManetCompare1::Run()
     std::cout << "\n--- PHY Activity ---" << std::endl;
     std::cout << "Total PHY TX: " << totalPhyTx << " packets" << std::endl;
     std::cout << "Total PHY RX: " << totalPhyRx << " packets" << std::endl;
+    // Phase 0.3: Show routing vs data packet breakdown
+    std::cout << "  - Routing packets TX: " << g_routingPacketsTx << " pkts" << std::endl;
+    std::cout << "  - Data packets TX: " << g_dataPacketsTx << " pkts" << std::endl;
     if (adhocNodes.GetN() > 0)
     {
         std::cout << "Avg TX per node: " << (totalPhyTx / adhocNodes.GetN()) << " pkts" << std::endl;
@@ -621,28 +700,42 @@ ManetCompare1::Run()
     }
     energyConsumed = totalInitialEnergy - totalFinalEnergy;
     
-    std::cout << "\n--- Energy Consumption (SimpleDeviceEnergyModel) ---" << std::endl;
+    // Phase 0.4: Calculate energy breakdown (estimate based on packet counts and current consumption)
+    // TX energy per packet: txCurrent × voltage × avgPacketTime
+    // Assume 512 bytes @ 6Mbps ≈ 0.68ms TX time per packet
+    // Reuse txCurrentA from energy model setup earlier
+    double txTimePerPacket = (m_packetSize * 8.0) / 6000000.0;  // 6 Mbps = 6,000,000 bps
+    double energyPerRoutingTx = (m_txCurrentBaseA + (std::pow(10.0, (m_txp - 30.0) / 10.0) / 3.3)) * 3.3 * txTimePerPacket;
+    double energyPerDataTx = energyPerRoutingTx;  // Same for both
+    double routingEnergy = g_routingPacketsTx * energyPerRoutingTx;
+    double dataEnergy = g_dataPacketsTx * energyPerDataTx;
+    double idleEnergy = energyConsumed - routingEnergy - dataEnergy;  // Remaining is idle/RX
+    
+    std::cout << "\n--- Energy Consumption (WifiRadioEnergyModel) ---" << std::endl;
     std::cout << "Total Initial Energy: " << totalInitialEnergy << " J" << std::endl;
     std::cout << "Total Consumed Energy: " << energyConsumed << " J" << std::endl;
+    std::cout << "  - Routing packets: " << routingEnergy << " J (" << (routingEnergy/energyConsumed*100) << "%)" << std::endl;
+    std::cout << "  - Data packets: " << dataEnergy << " J (" << (dataEnergy/energyConsumed*100) << "%)" << std::endl;
+    std::cout << "  - Idle/RX: " << idleEnergy << " J (" << (idleEnergy/energyConsumed*100) << "%)" << std::endl;
     std::cout << "Total Residual Energy: " << totalFinalEnergy << " J" << std::endl;
     std::cout << "Average per node: " << (energyConsumed / m_energySources.GetN()) << " J" << std::endl;
 
-    // Export results to CSV - session-based per-protocol files
-    // Each protocol gets one CSV per session with all runs in one table
+    // Export results to CSV - unified session file for all protocols
+    // All protocols in a session append to one shared CSV file
     std::string resultsFile;
     if (!m_sessionId.empty())
     {
-        // Session mode: one CSV per protocol per session
-        resultsFile = "results_" + m_protocolName + "_session_" + m_sessionId + ".csv";
+        // Session mode: one unified CSV file for all protocols in session
+        resultsFile = "results_session_" + m_sessionId + ".csv";
     }
     else
     {
-        // Legacy mode: timestamped per-run files
+        // Legacy mode: timestamped unified file
         time_t now = time(nullptr);
         struct tm* timeinfo = localtime(&now);
         char timestamp[20];
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeinfo);
-        resultsFile = "results_" + m_protocolName + "_" + timestamp + ".csv";
+        resultsFile = std::string("results_") + timestamp + ".csv";
     }
     
     // Check if file exists to determine if header is needed
@@ -652,14 +745,21 @@ ManetCompare1::Run()
     // Write header if file is new
     if (!fileExists)
     {
-        csv << "run,protocol,nodes,simtime,txPower,txRange,packetsSent,packetsReceived,pdr,"
-            << "initialEnergy,consumedEnergy,residualEnergy" << std::endl;
+        csv << "run,protocol,nodes,simtime,mobilityModel,nodeSpacing,areaWidth,areaHeight,minSpeed,maxSpeed,pauseTime,txPower,txRange,packetsSent,packetsReceived,pdr,"
+            << "initialEnergy,consumedEnergy,residualEnergy,routingPackets,dataPackets,routingEnergyJ,dataEnergyJ,idleEnergyJ" << std::endl;
     }
     
     csv << m_runNumber << ","
         << m_protocolName << ","
         << nWifis << ","
         << TotalTime << ","
+        << m_mobilityModel << ","
+        << m_nodeSpacing << ","
+        << m_areaWidth << ","
+        << m_areaHeight << ","
+        << m_minSpeed << ","
+        << m_maxSpeed << ","
+        << m_pauseTime << ","
         << m_txp << ","
         << m_txRange << ","
         << g_totalSentPackets << ","
@@ -667,7 +767,12 @@ ManetCompare1::Run()
         << pdr << ","
         << totalInitialEnergy << ","
         << energyConsumed << ","
-        << totalFinalEnergy << std::endl;
+        << totalFinalEnergy << ","
+        << g_routingPacketsTx << ","
+        << g_dataPacketsTx << ","
+        << routingEnergy << ","
+        << dataEnergy << ","
+        << idleEnergy << std::endl;
     
     csv.close();
     std::cout << "\nResults saved to: " << resultsFile << " (Run " << m_runNumber << ")" << std::endl;

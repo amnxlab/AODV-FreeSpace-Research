@@ -54,15 +54,19 @@ def get_default_parameters():
     defaults = {
         'nodes': 50,
         'sinks': 1,
+        'mobility_model': 'STATIC_GRID',
         'node_spacing': 50.0,
         'area_width': 800.0,
         'area_height': 400.0,
+        'min_speed': 5.0,
+        'max_speed': 55.0,
+        'pause_time': 50.0,
         'tx_range': 150.0,
         'tx_power': 7.5,
         'initial_energy': 20.0,
-        'idle_current': 0.0273,
+        'idle_current': 0.002,      # Phase 0: 2mA (was 0.0273)
         'rx_current': 0.0313,
-        'tx_current_base': 0.010,
+        'tx_current_base': 0.180,   # Phase 0: 180mA (was 0.010)
         'ethf': 0.1,
         'max_range': 250.0,
         'packet_size': 512,
