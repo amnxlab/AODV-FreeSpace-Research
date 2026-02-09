@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import json
+import pandas as pd
 
 # Add parent directory to path to import API modules
 current_dir = Path(__file__).parent
@@ -163,25 +164,51 @@ def list_results():
     for csv_file in sorted(RESULTS_DIR.glob('*.csv'), key=lambda x: x.stat().st_mtime, reverse=True):
         filename = csv_file.name
         
-        # Extract session ID from filename: results_PROTOCOL_session_SESSIONID.csv
+        # Support two filename formats:
+        # 1. NEW: results_session_SESSIONID.csv (consolidated file with all protocols)
+        # 2. OLD: results_PROTOCOL_session_SESSIONID.csv (separate file per protocol)
+        
         parts = filename.split('_')
-        if len(parts) >= 4 and parts[2] == 'session':
-            protocol = parts[1]
-            session_id = parts[3].replace('.csv', '')
-            
-            if session_id not in results:
-                results[session_id] = {
-                    'session_id': session_id,
-                    'files': [],
-                    'timestamp': session_id  # Session ID is timestamp
-                }
-                
-            results[session_id]['files'].append({
-                'filename': filename,
-                'protocol': protocol,
-                'size': csv_file.stat().st_size,
-                'modified': datetime.fromtimestamp(csv_file.stat().st_mtime).isoformat()
-            })
+        
+        if parts[0] == 'results' and 'session' in parts:
+            # Find session ID (comes after 'session')
+            try:
+                session_idx = parts.index('session')
+                if session_idx + 1 < len(parts):
+                    session_id = parts[session_idx + 1].replace('.csv', '')
+                    
+                    # Determine if this is OLD format (has protocol) or NEW format
+                    if session_idx == 2 and len(parts) >= 4:
+                        # OLD format: results_PROTOCOL_session_SESSIONID.csv
+                        protocol = parts[1]
+                    else:
+                        # NEW format: results_session_SESSIONID.csv
+                        # Read CSV to determine protocols
+                        try:
+                            df = pd.read_csv(csv_file)
+                            if 'protocol' in df.columns:
+                                protocol = 'Multiple'  # Contains multiple protocols
+                            else:
+                                protocol = 'Unknown'
+                        except:
+                            protocol = 'All'
+                    
+                    if session_id not in results:
+                        results[session_id] = {
+                            'session_id': session_id,
+                            'files': [],
+                            'timestamp': session_id  # Session ID is timestamp
+                        }
+                        
+                    results[session_id]['files'].append({
+                        'filename': filename,
+                        'protocol': protocol,
+                        'size': csv_file.stat().st_size,
+                        'modified': datetime.fromtimestamp(csv_file.stat().st_mtime).isoformat()
+                    })
+            except (ValueError, IndexError):
+                # Skip files that don't match expected format
+                continue
             
     return jsonify({
         'sessions': results

@@ -7,6 +7,8 @@ Start the web dashboard server with configuration options
 import argparse
 import sys
 import os
+import subprocess
+import signal
 from pathlib import Path
 
 # Add current directory to path
@@ -105,6 +107,95 @@ def setup_results_directory(project_root):
     print(f"📁 Results directory: {results_dir}")
 
 
+def kill_process_on_port(port):
+    """Kill any process using the specified port"""
+    try:
+        # Try lsof first (works on Linux and macOS)
+        result = subprocess.run(
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                if pid:
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                        print(f"  ✅ Killed process {pid} on port {port}")
+                    except ProcessLookupError:
+                        pass  # Process already gone
+                    except PermissionError:
+                        print(f"  ⚠️  Permission denied to kill process {pid}")
+                        return False
+            return True
+        return True  # No process found, port is free
+        
+    except FileNotFoundError:
+        # lsof not available, try fuser (Linux)
+        try:
+            result = subprocess.run(
+                ['fuser', '-k', f'{port}/tcp'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if 'killed' in result.stderr.lower() or result.returncode == 0:
+                print(f"  ✅ Killed process on port {port}")
+            return True
+        except FileNotFoundError:
+            # Neither lsof nor fuser available
+            print(f"  ⚠️  Cannot automatically kill process on port {port}")
+            print(f"  ℹ️  Please manually run: lsof -ti:{port} | xargs kill -9")
+            return False
+    except Exception as e:
+        print(f"  ⚠️  Error checking port {port}: {e}")
+        return False
+
+
+def check_port_available(port):
+    """Check if a port is available and try to free it if not"""
+    import socket
+    
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    
+    try:
+        sock.bind(('0.0.0.0', port))
+        sock.close()
+        return True  # Port is available
+    except OSError:
+        # Port is in use
+        print(f"\n⚠️  Port {port} is already in use")
+        print(f"🔧 Attempting to free port {port}...\n")
+        
+        if kill_process_on_port(port):
+            # Wait a moment for port to be freed
+            import time
+            time.sleep(1)
+            
+            # Check again
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                sock.bind(('0.0.0.0', port))
+                sock.close()
+                print(f"  ✅ Port {port} is now available\n")
+                return True
+            except OSError:
+                print(f"  ❌ Port {port} still in use after cleanup attempt\n")
+                return False
+        else:
+            return False
+    finally:
+        try:
+            sock.close()
+        except:
+            pass
+
+
 def main():
     """Main entry point"""
     # Parse arguments
@@ -156,6 +247,12 @@ Examples:
         check_ns3_installation(project_root)
         check_gaodv_module(project_root)
         setup_results_directory(project_root)
+    
+    # Check if port is available and free it if needed
+    if not check_port_available(args.port):
+        print(f"\n❌ Cannot start server - port {args.port} is in use")
+        print(f"💡 Try using a different port: python start.py --port 8080\n")
+        sys.exit(1)
     
     print("━" * 64)
     print()
